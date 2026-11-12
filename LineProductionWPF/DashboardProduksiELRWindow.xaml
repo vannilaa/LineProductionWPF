@@ -5,8 +5,70 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:LineProductionWPF"
         mc:Ignorable="d"
-        Title="DashboardProduksiELRWindow" Height="768" Width="1366" Background="#E5E7EB" WindowStyle="None" WindowState="Maximized" ResizeMode="NoResize" >
+        Title="Dashboard Produksi ELR"
+        Background="#E5E7EB"
+        WindowStyle="None" WindowState="Maximized" ResizeMode="NoResize"
+        Loaded="Window_Loaded" Activated="Window_Activated" Width="1366" Height="768">
+
     <Window.Resources>
+        <!-- ===== Buttons ===== -->
+        <Style x:Key="AppButton" TargetType="Button">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+        </Style>
+        <Style x:Key="HeaderButton" TargetType="Button" BasedOn="{StaticResource AppButton}">
+            <Setter Property="Width" Value="110"/>
+            <Setter Property="Height" Value="24"/>
+            <Setter Property="Margin" Value="5"/>
+        </Style>
+        <Style x:Key="StopButton" TargetType="Button" BasedOn="{StaticResource HeaderButton}">
+            <Setter Property="Background" Value="Red"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderBrush" Value="{x:Null}"/>
+        </Style>
+        <Style x:Key="BackButton" TargetType="Button" BasedOn="{StaticResource AppButton}">
+            <Setter Property="MinWidth" Value="156"/>
+            <Setter Property="Height" Value="40"/>
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="Background" Value="Red"/>
+            <Setter Property="Foreground" Value="White"/>
+        </Style>
+
+        <!-- ===== Header text ===== -->
+        <Style x:Key="HeaderSub" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="Gray"/>
+            <Setter Property="Margin" Value="5,0"/>
+        </Style>
+
+        <!-- ===== KPI cards ===== -->
+        <Style x:Key="Card" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="15"/>
+            <Setter Property="Margin" Value="10"/>
+        </Style>
+        <Style x:Key="CardTitle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <Style x:Key="CardBig" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="72"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+        </Style>
+        <Style x:Key="CardSmall" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="72"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Foreground" Value="#909090"/>
+            <Setter Property="LineHeight" Value="54"/>
+            <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
+        </Style>
+
+        <!-- ===== Table ===== -->
         <!-- Header: light gray, text wraps onto two lines -->
         <Style x:Key="GridHeader" TargetType="DataGridColumnHeader">
             <Setter Property="Background" Value="#F1F5F9"/>
@@ -51,140 +113,192 @@
             </Setter>
         </Style>
     </Window.Resources>
+
     <Grid>
-        <Border HorizontalAlignment="Center" Height="79" VerticalAlignment="Top" Width="1366" Background="White">
-            <Grid Margin="0,0,0,0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>   <!-- header -->
+            <RowDefinition Height="Auto"/>   <!-- KPI cards -->
+            <RowDefinition Height="*"/>      <!-- scan panel + tabs -->
+            <RowDefinition Height="Auto"/>   <!-- footer -->
+        </Grid.RowDefinitions>
+
+        <!-- ================= HEADER ================= -->
+        <Border Grid.Row="0" Background="White" Padding="0,5">
+            <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>   <!-- line number -->
+                    <ColumnDefinition Width="Auto"/>   <!-- part number -->
+                    <ColumnDefinition Width="Auto"/>   <!-- job no / posisi -->
+                    <ColumnDefinition Width="*"/>      <!-- empty space: pushes the rest right -->
+                    <ColumnDefinition Width="Auto"/>   <!-- buttons 1 -->
+                    <ColumnDefinition Width="Auto"/>   <!-- buttons 2 -->
+                    <ColumnDefinition Width="Auto"/>   <!-- clock -->
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" HorizontalAlignment="Left" Margin="10,0,10,0" VerticalAlignment="Center" Background="#FF0234FD" CornerRadius="6,6,6,6" Padding="16,8,16,8">
-                    <TextBlock x:Name="NomorLine" HorizontalAlignment="Center" Margin="0,0,0,0" TextWrapping="Wrap" Text="NOMOR  LINE" VerticalAlignment="Center" FontSize="36" FontWeight="Bold" Foreground="White"/>
+
+                <Border x:Name="bdNomorLine" Grid.Column="0" Background="#0234FD" CornerRadius="6"
+                     Padding="16,8" Margin="10,0" VerticalAlignment="Center"
+                     Cursor="Hand" MouseLeftButtonUp="bdNomorLine_Click">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock x:Name="NomorLine" Text="NOMOR  LINE"
+                             FontSize="36" FontWeight="Bold" Foreground="White"/>
+                        <TextBlock Text=" ▼" FontSize="20" Foreground="White" VerticalAlignment="Center"/>
+                    </StackPanel>
                 </Border>
-                <TextBlock x:Name="PartNomor" Grid.Column="1" HorizontalAlignment="Left" Margin="5,0,5,0" TextWrapping="Wrap" Text="PART NOMOR" VerticalAlignment="Center" FontSize="36" FontWeight="Bold" Foreground="Black"/>
-                <StackPanel Grid.Column="2" HorizontalAlignment="Left" Height="67" Margin="5,0,5,0" VerticalAlignment="Center" Width="165" Grid.ColumnSpan="2">
-                    <TextBlock x:Name="JobNo" HorizontalAlignment="Left" Margin="5,0,5,0" TextWrapping="Wrap" Text="JOB NO" VerticalAlignment="Center" FontSize="24" FontWeight="Bold" Foreground="Gray"/>
-                    <TextBlock x:Name="Posisi" HorizontalAlignment="Left" Margin="5,0,5,0" TextWrapping="Wrap" Text="POSISI" VerticalAlignment="Center" FontSize="24" FontWeight="Bold" Foreground="Gray"/>
+                <TextBlock x:Name="PartNomor" Grid.Column="1" Text="PART NOMOR"
+                           FontSize="36" FontWeight="Bold" Margin="5,0"
+                           VerticalAlignment="Center"/>
+
+                <StackPanel Grid.Column="2" Margin="5,0" VerticalAlignment="Center">
+                    <TextBlock x:Name="JobNo" Text="JOB NO" Style="{StaticResource HeaderSub}"/>
+                    <TextBlock x:Name="Posisi" Text="POSISI" Style="{StaticResource HeaderSub}"/>
                 </StackPanel>
-                <StackPanel Grid.Column="4" HorizontalAlignment="Center" Height="64" VerticalAlignment="Center" Width="120">
-                    <Button Content="Kendala" Margin="5,5,5,5" FontWeight="Bold" Foreground="Black" Height="24"/>
-                    <Button Content="Ganti Target" Margin="5,5,5,5" FontWeight="Bold" Height="24"/>
+
+                <StackPanel Grid.Column="4" VerticalAlignment="Center">
+                    <Button Content="Kendala" Style="{StaticResource HeaderButton}"/>
+                    <Button Content="Ganti Target" Style="{StaticResource HeaderButton}"/>
                 </StackPanel>
-                <StackPanel Grid.Column="5" HorizontalAlignment="Center" Height="64" VerticalAlignment="Center" Width="120">
-                    <Button Content="Cetak Ulang" Margin="5,5,5,5" FontWeight="Bold" Foreground="Black" Height="24"/>
-                    <Button Content="Stop Counter" Margin="5,5,5,5" FontWeight="Bold" Background="Red" Foreground="White" Height="24" BorderBrush="{x:Null}"/>
+
+                <StackPanel Grid.Column="5" VerticalAlignment="Center">
+                    <Button Content="Cetak Ulang" Style="{StaticResource HeaderButton}"/>
+                    <Button Content="Stop Counter" Style="{StaticResource StopButton}"/>
                 </StackPanel>
-                <TextBlock Grid.Column="6" x:Name="txtClock" Text="28 Oktober 2026 14:56:12" FontSize="24" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="5,0,5,0"/>
+
+                <TextBlock x:Name="txtClock" Grid.Column="6" Text="28 Oktober 2026 14:56:12"
+                           FontSize="24" Margin="10,0" VerticalAlignment="Center"/>
             </Grid>
         </Border>
-        <Border BorderThickness="1" HorizontalAlignment="Center" Height="55" Margin="0,713,0,0" VerticalAlignment="Top" Width="1366" Background="White">
-            <Button x:Name="btnKembali" Content="KEMBALI" Height="40" Margin="1186,0,24,0" VerticalAlignment="Center" FontSize="24" Background="Red" FontWeight="Bold" Foreground="White" Click="btnKembali_Click"/>
-        </Border>
-        <Grid HorizontalAlignment="Center" Height="0" Margin="0,79,0,0" VerticalAlignment="Top" Width="0"/>
-        <Grid HorizontalAlignment="Center" Height="235" Margin="0,84,0,0" VerticalAlignment="Top" Width="1366">
+
+        <!-- ================= KPI CARDS ================= -->
+        <Grid Grid.Row="1" Margin="10,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" HorizontalAlignment="Center" Height="214" VerticalAlignment="Center" Width="316" RenderTransformOrigin="0.5,0.5" CornerRadius="10,10,10,10" Background="White" Margin="20,10,9.4,10">
-                <StackPanel Height="194" Margin="15,0,15,0" VerticalAlignment="Center">
-                    <TextBlock TextWrapping="Wrap" Text="TARGET PRODUKSI" HorizontalAlignment="Left" VerticalAlignment="Center" FontWeight="Bold" FontSize="24"/>
-                    <TextBlock TextWrapping="Wrap" Text="999" HorizontalAlignment="Left" FontWeight="Bold" FontSize="72"  LineStackingStrategy="BlockLineHeight"/>
-                    <TextBlock TextWrapping="Wrap" Text="/999" HorizontalAlignment="Right" FontWeight="Bold" FontSize="72" LineHeight="40" LineStackingStrategy="BlockLineHeight" Height="54" Foreground="#FF909090"/>
+
+            <Border Grid.Column="0" Style="{StaticResource Card}">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="TARGET PRODUKSI" Style="{StaticResource CardTitle}"/>
+                    <TextBlock x:Name="txtTarget" Text="999" Style="{StaticResource CardBig}"/>
+                    <TextBlock x:Name="txtTargetJam" Text="/999" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
-            <Border Grid.Column="1" HorizontalAlignment="Center" Height="214" VerticalAlignment="Center" Width="316" RenderTransformOrigin="0.5,0.5" CornerRadius="10,10,10,10" Background="White" Margin="10,10,10,10">
-                <StackPanel Height="194" Margin="15,0,15,0" VerticalAlignment="Center">
-                    <TextBlock TextWrapping="Wrap" Text="ACTUAL PRODUKSI" HorizontalAlignment="Left" VerticalAlignment="Center" FontWeight="Bold" FontSize="24" Foreground="#FF0800FF"/>
-                    <TextBlock TextWrapping="Wrap" Text="999" HorizontalAlignment="Left" FontWeight="Bold" FontSize="72"  LineStackingStrategy="BlockLineHeight" Foreground="#FF0800FF"/>
-                    <TextBlock TextWrapping="Wrap" Text="/999" HorizontalAlignment="Right" FontWeight="Bold" FontSize="72" LineHeight="40" LineStackingStrategy="BlockLineHeight" Height="54" Foreground="#FF909090"/>
+
+            <Border Grid.Column="1" Style="{StaticResource Card}">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="ACTUAL PRODUKSI" Style="{StaticResource CardTitle}" Foreground="#0800FF"/>
+                    <TextBlock x:Name="txtActual" Text="999" Style="{StaticResource CardBig}" Foreground="#0800FF"/>
+                    <TextBlock x:Name="txtActualJam" Text="/999" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
-            <Border Grid.Column="2" HorizontalAlignment="Center" Height="214" VerticalAlignment="Center" Width="316" RenderTransformOrigin="0.5,0.5" CornerRadius="10,10,10,10" Background="White" Margin="10,10,10,10">
-                <StackPanel Height="194" Margin="15,0,15,0" VerticalAlignment="Center">
-                    <TextBlock TextWrapping="Wrap" Text="COUNT PRODUKSI" HorizontalAlignment="Left" VerticalAlignment="Center" FontWeight="Bold" FontSize="24"/>
-                    <TextBlock TextWrapping="Wrap" Text="999" HorizontalAlignment="Left" FontWeight="Bold" FontSize="72"  LineStackingStrategy="BlockLineHeight"/>
-                    <TextBlock TextWrapping="Wrap" Text="/999" HorizontalAlignment="Right" FontWeight="Bold" FontSize="72" LineHeight="40" LineStackingStrategy="BlockLineHeight" Height="54" Foreground="#FF909090"/>
+
+            <Border Grid.Column="2" Style="{StaticResource Card}">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="COUNT PRODUKSI" Style="{StaticResource CardTitle}"/>
+                    <TextBlock x:Name="txtCount" Text="999" Style="{StaticResource CardBig}"/>
+                    <TextBlock x:Name="txtCountJam" Text="/999" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
-            <Border x:Name="bdSelisih" Grid.Column="3" HorizontalAlignment="Center" Height="214" VerticalAlignment="Center" Width="316" RenderTransformOrigin="0.5,0.5" CornerRadius="10,10,10,10" Background="#EF4444" Margin="10,10,20,10">
-                <StackPanel Height="194" Margin="15,0,15,0" VerticalAlignment="Center">
-                    <TextBlock TextWrapping="Wrap" Text="SELISIH" HorizontalAlignment="Left" VerticalAlignment="Center" FontWeight="Bold" FontSize="24"/>
-                    <TextBlock x:Name="txtSelisih" TextWrapping="Wrap" Text="0" HorizontalAlignment="Left" FontWeight="Bold" FontSize="72"  LineStackingStrategy="BlockLineHeight"/>
-                    <TextBlock x:Name="txtSelisihJam" TextWrapping="Wrap" Text="-99" HorizontalAlignment="Right" FontWeight="Bold" FontSize="72" LineHeight="40" LineStackingStrategy="BlockLineHeight" Height="54" Foreground="Black"/>
+
+            <Border x:Name="bdSelisih" Grid.Column="3" Style="{StaticResource Card}" Background="#EF4444">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock x:Name="txtSelisihTitle" Text="SELISIH" Style="{StaticResource CardTitle}"/>
+                    <TextBlock x:Name="txtSelisih" Text="0" Style="{StaticResource CardBig}"/>
+                    <TextBlock x:Name="txtSelisihJam" Text="-99" Style="{StaticResource CardSmall}" Foreground="Black"/>
                 </StackPanel>
             </Border>
         </Grid>
-        <Border HorizontalAlignment="Left" Height="379" Margin="20,321,0,0" VerticalAlignment="Top" Width="316" CornerRadius="10,10,10,10" Background="White">
-            <Grid HorizontalAlignment="Center" Height="342" VerticalAlignment="Center" Width="280">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" HorizontalAlignment="Center" Height="16" TextWrapping="Wrap" Text="SCAN BARCODE/QR" VerticalAlignment="Top" Width="280"/>
-                <TextBox Grid.Row="1" HorizontalAlignment="Center" TextWrapping="Wrap" VerticalAlignment="Center" Width="260" Height="24" RenderTransformOrigin="0.496,1.356" Margin="0,5,0,5"/>
-                <TextBlock Grid.Row="2" HorizontalAlignment="Center" Height="16" TextWrapping="Wrap" Text="SCAN per BOX" VerticalAlignment="Top" Width="280"/>
-                <Border Grid.Row="3" Background="#EEF4FA" Padding="8,4">
-                    <Grid>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
-                            <TextBlock x:Name="txtScanned" Text="0" FontSize="24" FontWeight="Bold" Foreground="#2F6FE4"/>
-                            <TextBlock Text=" / " FontSize="24" FontWeight="Bold" Foreground="#6B7280"/>
-                            <TextBlock x:Name="txtPerBox" Text="0" FontSize="24" FontWeight="Bold" Foreground="#4B5563"/>
-                        </StackPanel>
-                        <TextBlock x:Name="txtPallet" Text="Pallet" HorizontalAlignment="Right"
-                           VerticalAlignment="Bottom"/>
-                    </Grid>
-                </Border>
-                <ListBox Grid.Row="4" HorizontalAlignment="Center" Height="220" VerticalAlignment="Center" Width="280" d:ItemsSource="{d:SampleData ItemCount=20}" BorderBrush="Black" Background="#FFF1E2E2"/>
-            </Grid>
-        </Border>
-        <TabControl Margin="356,321,20,68" Padding="2,6,2,2">
-            <TabItem Header="Jadwal Produksi (Hourly)">
-                <DataGrid x:Name="dgvSchedule"
-                  AutoGenerateColumns="False"
-                  IsReadOnly="True"
-                  CanUserAddRows="False"
-                  HeadersVisibility="Column"
-                  GridLinesVisibility="None"
-                  Background="White" BorderThickness="0"
-                  RowHeight="38" FontSize="14"
-                  AlternationCount="2"
-                  ColumnHeaderStyle="{StaticResource GridHeader}"
-                  RowStyle="{StaticResource GridRow}"
-                  CellStyle="{StaticResource GridCell}">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Jadwal #"      Binding="{Binding Jadwal}"       Width="*"/>
-                        <DataGridTextColumn Header="Jam"           Binding="{Binding Jam}"          Width="*"/>
-                        <DataGridTextColumn Header="Part Number"   Binding="{Binding PartNumber}"   Width="1.8*">
-                            <DataGridTextColumn.ElementStyle>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
-                                </Style>
-                            </DataGridTextColumn.ElementStyle>
-                        </DataGridTextColumn>
-                        <DataGridTextColumn Header="Job No"        Binding="{Binding JobNo}"        Width="*"/>
-                        <DataGridTextColumn Header="Target"        Binding="{Binding Target}"       Width="*"/>
-                        <DataGridTextColumn Header="Jumlah Target" Binding="{Binding JumlahTarget}" Width="*"/>
-                        <DataGridTextColumn Header="Actual"        Binding="{Binding Actual}"       Width="*"/>
-                        <DataGridTextColumn Header="Jumlah Actual" Binding="{Binding JumlahActual}" Width="*"/>
-                        <DataGridTextColumn Header="Selisih"       Binding="{Binding Selisih}"      Width="*"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </TabItem>
 
-            <TabItem Header="Terima Box / Pallet"/>
-            <TabItem Header="Tampilan Web"/>
-            <TabItem Header="Log Serial / COM"/>
-        </TabControl> 
+        <!-- ================= MAIN AREA ================= -->
+        <Grid Grid.Row="2" Margin="10,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="340"/>   <!-- scan panel: fixed width -->
+                <ColumnDefinition Width="*"/>     <!-- tabs: takes the rest -->
+            </Grid.ColumnDefinitions>
+
+            <!-- Scan panel -->
+            <Border Grid.Column="0" Style="{StaticResource Card}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>   <!-- list fills the rest -->
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Text="SCAN BARCODE/QR"/>
+
+                    <TextBox x:Name="txtScan" Grid.Row="1" Height="24" Margin="0,5"
+                             KeyDown="txtScan_KeyDown"
+                             LostKeyboardFocus="txtScan_LostKeyboardFocus"/>
+
+                    <TextBlock x:Name="txtScanPerBox" Grid.Row="2" Text="SCAN per BOX"/>
+
+                    <Border Grid.Row="3" Background="#EEF4FA" Padding="8,4" Margin="0,5,0,0">
+                        <Grid>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
+                                <TextBlock x:Name="txtScanned" Text="0" FontSize="24" FontWeight="Bold" Foreground="#2F6FE4"/>
+                                <TextBlock Text=" / " FontSize="24" FontWeight="Bold" Foreground="#6B7280"/>
+                                <TextBlock x:Name="txtPerBox" Text="0" FontSize="24" FontWeight="Bold" Foreground="#4B5563"/>
+                            </StackPanel>
+                            <TextBlock x:Name="txtPallet" Text="Pallet"
+                                       HorizontalAlignment="Right" VerticalAlignment="Bottom"/>
+                        </Grid>
+                    </Border>
+
+                    <ListBox x:Name="lstScans" Grid.Row="4" Margin="0,10,0,0"
+                             d:ItemsSource="{d:SampleData ItemCount=20}"
+                             BorderBrush="Black" Background="#FFF1E2E2" FontFamily="Consolas"/>
+                </Grid>
+            </Border>
+
+            <!-- Tabs -->
+            <TabControl Grid.Column="1" Margin="10" Padding="2,6,2,2">
+                <TabItem Header="Jadwal Produksi (Hourly)">
+                    <DataGrid x:Name="dgvSchedule"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="None"
+                              Background="White" BorderThickness="0"
+                              RowHeight="38" FontSize="14"
+                              AlternationCount="2"
+                              ColumnHeaderStyle="{StaticResource GridHeader}"
+                              RowStyle="{StaticResource GridRow}"
+                              CellStyle="{StaticResource GridCell}">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Jadwal #"      Binding="{Binding Jadwal}"       Width="*"/>
+                            <DataGridTextColumn Header="Jam"           Binding="{Binding Jam}"          Width="*"/>
+                            <DataGridTextColumn Header="Part Number"   Binding="{Binding PartNumber}"   Width="1.8*">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Job No"        Binding="{Binding JobNo}"        Width="*"/>
+                            <DataGridTextColumn Header="Target"        Binding="{Binding Target}"       Width="*"/>
+                            <DataGridTextColumn Header="Jumlah Target" Binding="{Binding JumlahTarget}" Width="*"/>
+                            <DataGridTextColumn Header="Actual"        Binding="{Binding Actual}"       Width="*"/>
+                            <DataGridTextColumn Header="Jumlah Actual" Binding="{Binding JumlahActual}" Width="*"/>
+                            <DataGridTextColumn Header="Selisih"       Binding="{Binding Selisih}"      Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </TabItem>
+
+                <TabItem Header="Terima Box / Pallet"/>
+                <TabItem Header="Tampilan Web"/>
+                <TabItem Header="Log Serial / COM"/>
+            </TabControl>
+        </Grid>
+
+        <!-- ================= FOOTER ================= -->
+        <Border Grid.Row="3" Background="White" Padding="24,8">
+            <Button x:Name="btnKembali" Content="KEMBALI" Style="{StaticResource BackButton}"
+                    HorizontalAlignment="Right" Click="btnKembali_Click"/>
+        </Border>
     </Grid>
 </Window>
