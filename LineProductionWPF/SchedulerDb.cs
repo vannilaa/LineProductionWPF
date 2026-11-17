@@ -27,6 +27,7 @@ namespace LineProductionWPF
         public int Target { get; set; }          // rate: pcs per hour (product.target_per_jam)
         public int Discan { get; set; }          // scanned on the line so far
         public int QtyPerBox { get; set; }       // pieces that make one box (product.qty_per_box), 0 = unknown
+        public int BoxesRequired { get; set; }   // boxes needed for this job's planned quantity
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
@@ -139,7 +140,8 @@ namespace LineProductionWPF
             cmd.CommandText =
                 "SELECT i.urutan, i.barcode, i.jumlah, " +
                 "       COALESCE(p.part_number_code, p.part_number), p.job_no, p.position, p.target_per_jam, " +
-                "       ISNULL(v.discan, 0), ISNULL(p.qty_per_box, 0), p.part " +
+                "       ISNULL(v.discan, 0), ISNULL(p.qty_per_box, 0), p.part, " +
+                "       CASE WHEN i.jumlah > 0 THEN ((i.jumlah - 1) / CASE WHEN p.qty_per_box > 0 THEN p.qty_per_box ELSE 1 END) + 1 ELSE 0 END " +
                 "FROM schedule s " +
                 "JOIN schedule_item i ON i.schedule_id = s.id " +
                 "LEFT JOIN product p ON p.barcode = i.barcode " +
@@ -164,7 +166,8 @@ namespace LineProductionWPF
                     Target = r.IsDBNull(6) ? 0 : r.GetInt32(6),
                     Discan = r.GetInt32(7),
                     QtyPerBox = r.GetInt32(8),
-                    Part = r.IsDBNull(9) ? "" : r.GetString(9)
+                    Part = r.IsDBNull(9) ? "" : r.GetString(9),
+                    BoxesRequired = r.GetInt32(10)
                 });
             }
             return list;

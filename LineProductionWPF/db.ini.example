@@ -1,5 +1,0 @@
-# SQL Server settings (same file format as DailyScheduler). Copy to db.ini next to the .exe.
-Server=192.168.1.56,1433
-Database=DailyScheduler
-User=scheduler_app
-Password=

@@ -26,14 +26,15 @@ namespace LineProductionWPF
     /// <summary>
     /// Decides which job is current and turns the schedule + scan numbers into the board numbers.
     ///  - Current job = first job whose scanned count is below its Jumlah (all done: the last job).
-    ///  - Count of a job = seconds since it became current x its pcs per hour / 3600, never above its Jumlah,
-    ///    frozen when the job completes. A job that became current is the moment the previous one completed.
+    ///  - The first job starts at 08:00; each later job starts when the previous job completes.
+    ///  - Count = elapsed seconds x pcs per hour / 3600, never above Jumlah, frozen when the job completes.
     ///  - Day numbers add up every job; the job numbers restart when the next job becomes current.
     /// </summary>
     public class KanbanTracker
     {
         private readonly Dictionary<int, JobTiming> _timings = new Dictionary<int, JobTiming>();   // by urutan
         private string _key = "";
+        private DateTime _firstJobStart;
 
         private static string StatePath
         {
@@ -48,6 +49,7 @@ namespace LineProductionWPF
         public void Open(DateTime date, int lineId)
         {
             _key = date.ToString("yyyy-MM-dd") + "|" + lineId;
+            _firstJobStart = date.Date.AddHours(8);
             _timings.Clear();
             try
             {
@@ -85,10 +87,11 @@ namespace LineProductionWPF
         public void Update(IList<KanbanJob> jobs, DateTime now)
         {
             bool changed = false;
-            bool previousComplete = true;   // the first job is current from the first moment we see the schedule
+            bool previousComplete = true;
 
-            foreach (var job in jobs)
+            for (int i = 0; i < jobs.Count; i++)
             {
+                var job = jobs[i];
                 if (!_timings.TryGetValue(job.Urutan, out var t))
                 {
                     if (!previousComplete) break;   // not reached yet
@@ -97,7 +100,16 @@ namespace LineProductionWPF
                     changed = true;
                 }
 
-                if (t.Start == null && previousComplete)
+                if (i == 0)
+                {
+                    if (t.Start != _firstJobStart || t.Unobserved)
+                    {
+                        t.Start = _firstJobStart;
+                        t.Unobserved = false;
+                        changed = true;
+                    }
+                }
+                else if (t.Start == null && previousComplete)
                 {
                     t.Start = now;
                     if (job.IsComplete) t.Unobserved = true;   // it was done before we looked

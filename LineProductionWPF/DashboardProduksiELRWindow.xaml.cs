@@ -42,6 +42,7 @@ namespace LineProductionWPF
         };
         private int ScanPerBox => _current != null && _current.QtyPerBox > 0 ? _current.QtyPerBox : 1;
         private int BoxesPerPallet => DefaultBoxesPerPallet;
+        private int BoxesCompleted => _palletCount * BoxesPerPallet + _boxCount;
         private int _scansInBox, _boxCount, _palletCount;
 
         public DashboardProduksiELRWindow()
@@ -220,7 +221,7 @@ namespace LineProductionWPF
 
         private void ShowPalletFull()
         {
-            txtScanned.Text = BoxesPerPallet.ToString();                                   // shows 10
+            txtScanned.Text = BoxesCompleted.ToString();
             txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E)); // green
 
             _holdTimer.Stop();
@@ -230,13 +231,13 @@ namespace LineProductionWPF
         private void UpdateScanCounters()
         {
             txtScanPerBox.Text = "SCAN per BOX: " + _scansInBox + " / " + ScanPerBox;
-            txtPerBox.Text = BoxesPerPallet.ToString();
+            txtPerBox.Text = (_current?.BoxesRequired ?? 0).ToString();
             txtPallet.Text = "Pallet: " + _palletCount;
 
-            // while the "full" display is held, don't overwrite the 10
+            // while the completed-pallet display is held, don't overwrite the box total
             if (!_holdTimer.IsEnabled)
             {
-                txtScanned.Text = _boxCount.ToString();
+                txtScanned.Text = BoxesCompleted.ToString();
             }
         }
 
