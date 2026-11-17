@@ -311,12 +311,9 @@ namespace LineProductionWPF
         }
 
         // ---------- buttons and closing ----------
-        private void btnKembali_Click(object sender, RoutedEventArgs e)
+        private void btnKeluar_Click(object sender, RoutedEventArgs e)
         {
-            var home = new MainWindow();
-            Application.Current.MainWindow = home;
-            home.Show();
-            Close();
+            Application.Current.Shutdown();
         }
 
         protected override void OnClosed(EventArgs e)

@@ -26,7 +26,7 @@
             <Setter Property="Foreground" Value="White"/>
             <Setter Property="BorderBrush" Value="{x:Null}"/>
         </Style>
-        <Style x:Key="BackButton" TargetType="Button" BasedOn="{StaticResource AppButton}">
+        <Style x:Key="ExitButton" TargetType="Button" BasedOn="{StaticResource AppButton}">
             <Setter Property="MinWidth" Value="156"/>
             <Setter Property="Height" Value="40"/>
             <Setter Property="FontSize" Value="24"/>
@@ -300,8 +300,8 @@
             <Grid>
                 <TextBlock x:Name="txtStatus" VerticalAlignment="Center" FontSize="16" Foreground="#6B7280"
                            TextWrapping="Wrap" Margin="0,0,180,0"/>
-                <Button x:Name="btnKembali" Content="KEMBALI" Style="{StaticResource BackButton}"
-                        HorizontalAlignment="Right" Click="btnKembali_Click"/>
+                <Button x:Name="btnKeluar" Content="KELUAR" Style="{StaticResource ExitButton}"
+                        HorizontalAlignment="Right" Click="btnKeluar_Click"/>
             </Grid>
         </Border>
     </Grid>
