@@ -66,6 +66,7 @@
         <Button Content="ELR Input Line SP" HorizontalAlignment="Left" Height="50" Margin="776,300,0,0" VerticalAlignment="Top" Width="460" FontSize="24" RenderTransformOrigin="0.492,1.101"/>
         <Button Content="BKL / STC" HorizontalAlignment="Left" Height="50" Margin="776,370,0,0" VerticalAlignment="Top" Width="460" FontSize="24" RenderTransformOrigin="0.492,1.101"/>
         <Button Content="BKL / STC SP" HorizontalAlignment="Left" Height="50" Margin="776,440,0,0" VerticalAlignment="Top" Width="460"                           FontSize="24" RenderTransformOrigin="0.492,1.101"/>
+        <Button x:Name="btnKanban" Content="KANBAN JADWAL" Click="btnKanban_Click" HorizontalAlignment="Left" Height="50" Margin="776,510,0,0" VerticalAlignment="Top" Width="460" FontSize="24" FontWeight="Bold"/>
         <Border HorizontalAlignment="Center" Height="104" Margin="0,664,0,0" VerticalAlignment="Top" Width="1366" Background="White">
             <Grid>
                 <Grid.ColumnDefinitions>

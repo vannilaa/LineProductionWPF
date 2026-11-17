@@ -47,6 +47,13 @@ namespace LineProductionWPF
             next.Show();
             Close();
         }
+        private void btnKanban_Click(object sender, RoutedEventArgs e)
+        {
+            var next = new KanbanWindow();
+            Application.Current.MainWindow = next;
+            next.Show();
+            Close();
+        }
         protected override void OnClosed(EventArgs e)
         {
             _clockTimer.Stop();
