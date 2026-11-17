@@ -154,7 +154,7 @@ namespace LineProductionWPF
 
             PartNomor.Text = _current?.PartNumber ?? "-";
             JobNo.Text = _current == null ? "-" : _current.JobNo;
-            Posisi.Text = _current == null ? "-" : _current.Posisi;
+            Posisi.Text = _current == null || _current.PosisiPart.Length == 0 ? "-" : _current.PosisiPart;
 
             txtTarget.Text = n.TargetJob.ToString();
             txtTargetJam.Text = "/" + n.TargetDay;

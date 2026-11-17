@@ -19,6 +19,10 @@ namespace LineProductionWPF
         public string PartNumber { get; set; } = "";
         public string JobNo { get; set; } = "";
         public string Posisi { get; set; } = "";
+        public string Part { get; set; } = "";
+
+        /// <summary>Position + part, e.g. "F - COVER". Whatever is missing is left out.</summary>
+        public string PosisiPart => string.Join(" - ", new[] { Posisi, Part }.Where(x => !string.IsNullOrWhiteSpace(x) && x != "-"));
         public int Jumlah { get; set; }          // planned quantity of this job
         public int Target { get; set; }          // rate: pcs per hour (product.target_per_jam)
         public int Discan { get; set; }          // scanned on the line so far
@@ -135,7 +139,7 @@ namespace LineProductionWPF
             cmd.CommandText =
                 "SELECT i.urutan, i.barcode, i.jumlah, " +
                 "       COALESCE(p.part_number_code, p.part_number), p.job_no, p.position, p.target_per_jam, " +
-                "       ISNULL(v.discan, 0), ISNULL(p.qty_per_box, 0) " +
+                "       ISNULL(v.discan, 0), ISNULL(p.qty_per_box, 0), p.part " +
                 "FROM schedule s " +
                 "JOIN schedule_item i ON i.schedule_id = s.id " +
                 "LEFT JOIN product p ON p.barcode = i.barcode " +
@@ -159,7 +163,8 @@ namespace LineProductionWPF
                     Posisi = r.IsDBNull(5) ? "-" : r.GetString(5),
                     Target = r.IsDBNull(6) ? 0 : r.GetInt32(6),
                     Discan = r.GetInt32(7),
-                    QtyPerBox = r.GetInt32(8)
+                    QtyPerBox = r.GetInt32(8),
+                    Part = r.IsDBNull(9) ? "" : r.GetString(9)
                 });
             }
             return list;

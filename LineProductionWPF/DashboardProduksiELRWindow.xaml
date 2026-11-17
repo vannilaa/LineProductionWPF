@@ -279,7 +279,7 @@
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
                             <DataGridTextColumn Header="Job No"      Binding="{Binding JobNo}"      Width="*"/>
-                            <DataGridTextColumn Header="Posisi"      Binding="{Binding Posisi}"     Width="*"/>
+                            <DataGridTextColumn Header="Posisi + Part" Binding="{Binding PosisiPart}" Width="1.5*"/>
                             <DataGridTextColumn Header="Target / jam" Binding="{Binding Target}"    Width="*"/>
                             <DataGridTextColumn Header="Jumlah"      Binding="{Binding Jumlah}"     Width="*"/>
                             <DataGridTextColumn Header="Scan"        Binding="{Binding Discan}"     Width="*"/>
