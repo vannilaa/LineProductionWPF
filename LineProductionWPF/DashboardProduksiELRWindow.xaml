@@ -180,24 +180,24 @@
             <Border Grid.Column="0" Style="{StaticResource Card}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="TARGET PRODUKSI" Style="{StaticResource CardTitle}"/>
-                    <TextBlock x:Name="txtTarget" Text="999" Style="{StaticResource CardBig}"/>
-                    <TextBlock x:Name="txtTargetJam" Text="/999" Style="{StaticResource CardSmall}"/>
+                    <TextBlock x:Name="txtTarget" Text="0" Style="{StaticResource CardBig}"/>
+                    <TextBlock x:Name="txtTargetJam" Text="/0" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
 
             <Border Grid.Column="1" Style="{StaticResource Card}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="ACTUAL PRODUKSI" Style="{StaticResource CardTitle}" Foreground="#0800FF"/>
-                    <TextBlock x:Name="txtActual" Text="999" Style="{StaticResource CardBig}" Foreground="#0800FF"/>
-                    <TextBlock x:Name="txtActualJam" Text="/999" Style="{StaticResource CardSmall}"/>
+                    <TextBlock x:Name="txtActual" Text="0" Style="{StaticResource CardBig}" Foreground="#0800FF"/>
+                    <TextBlock x:Name="txtActualJam" Text="/0" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
 
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="COUNT PRODUKSI" Style="{StaticResource CardTitle}"/>
-                    <TextBlock x:Name="txtCount" Text="999" Style="{StaticResource CardBig}"/>
-                    <TextBlock x:Name="txtCountJam" Text="/999" Style="{StaticResource CardSmall}"/>
+                    <TextBlock x:Name="txtCount" Text="0" Style="{StaticResource CardBig}"/>
+                    <TextBlock x:Name="txtCountJam" Text="/0" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
 
@@ -205,7 +205,7 @@
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock x:Name="txtSelisihTitle" Text="SELISIH" Style="{StaticResource CardTitle}"/>
                     <TextBlock x:Name="txtSelisih" Text="0" Style="{StaticResource CardBig}"/>
-                    <TextBlock x:Name="txtSelisihJam" Text="-99" Style="{StaticResource CardSmall}" Foreground="Black"/>
+                    <TextBlock x:Name="txtSelisihJam" Text="0" Style="{StaticResource CardSmall}" Foreground="Black"/>
                 </StackPanel>
             </Border>
         </Grid>
