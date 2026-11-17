@@ -256,7 +256,7 @@
 
             <!-- Tabs -->
             <TabControl Grid.Column="1" Margin="10" Padding="2,6,2,2">
-                <TabItem Header="Jadwal Produksi (Hourly)">
+                <TabItem Header="Jadwal Produksi">
                     <DataGrid x:Name="dgvSchedule"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
@@ -270,21 +270,21 @@
                               RowStyle="{StaticResource GridRow}"
                               CellStyle="{StaticResource GridCell}">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Jadwal #"      Binding="{Binding Jadwal}"       Width="*"/>
-                            <DataGridTextColumn Header="Jam"           Binding="{Binding Jam}"          Width="*"/>
-                            <DataGridTextColumn Header="Part Number"   Binding="{Binding PartNumber}"   Width="1.8*">
+                            <DataGridTextColumn Header="Urutan"      Binding="{Binding Urutan}"     Width="*"/>
+                            <DataGridTextColumn Header="Part Number" Binding="{Binding PartNumber}" Width="1.8*">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Job No"        Binding="{Binding JobNo}"        Width="*"/>
-                            <DataGridTextColumn Header="Target"        Binding="{Binding Target}"       Width="*"/>
-                            <DataGridTextColumn Header="Jumlah Target" Binding="{Binding JumlahTarget}" Width="*"/>
-                            <DataGridTextColumn Header="Actual"        Binding="{Binding Actual}"       Width="*"/>
-                            <DataGridTextColumn Header="Jumlah Actual" Binding="{Binding JumlahActual}" Width="*"/>
-                            <DataGridTextColumn Header="Selisih"       Binding="{Binding Selisih}"      Width="*"/>
+                            <DataGridTextColumn Header="Job No"      Binding="{Binding JobNo}"      Width="*"/>
+                            <DataGridTextColumn Header="Posisi"      Binding="{Binding Posisi}"     Width="*"/>
+                            <DataGridTextColumn Header="Target / jam" Binding="{Binding Target}"    Width="*"/>
+                            <DataGridTextColumn Header="Jumlah"      Binding="{Binding Jumlah}"     Width="*"/>
+                            <DataGridTextColumn Header="Scan"        Binding="{Binding Discan}"     Width="*"/>
+                            <DataGridTextColumn Header="Count"       Binding="{Binding Count}"      Width="*"/>
+                            <DataGridTextColumn Header="Status"      Binding="{Binding Status}"     Width="*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </TabItem>
@@ -297,8 +297,12 @@
 
         <!-- ================= FOOTER ================= -->
         <Border Grid.Row="3" Background="White" Padding="24,8">
-            <Button x:Name="btnKembali" Content="KEMBALI" Style="{StaticResource BackButton}"
-                    HorizontalAlignment="Right" Click="btnKembali_Click"/>
+            <Grid>
+                <TextBlock x:Name="txtStatus" VerticalAlignment="Center" FontSize="16" Foreground="#6B7280"
+                           TextWrapping="Wrap" Margin="0,0,180,0"/>
+                <Button x:Name="btnKembali" Content="KEMBALI" Style="{StaticResource BackButton}"
+                        HorizontalAlignment="Right" Click="btnKembali_Click"/>
+            </Grid>
         </Border>
     </Grid>
 </Window>

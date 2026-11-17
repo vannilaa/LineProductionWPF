@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -12,43 +13,41 @@ using System.Windows.Controls.Primitives;
 
 namespace LineProductionWPF
 {
+    /// <summary>
+    /// Line dashboard. The boards show today's schedule made in DailyScheduler (read from its database):
+    /// target (planned), actual (scanned), count (pcs per hour) and selisih, each as "current job / whole day".
+    /// </summary>
     public partial class DashboardProduksiELRWindow : Window
     {
-        // ===== THE ONE LINE TO CHANGE FOR THE SERVER =====
-        private readonly IScheduleSource _source = new FakeScheduleSource();
-        // ==================================================
+        private static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(5);   // how often the database is read
+        private const int DefaultBoxesPerPallet = 10;   // not in the database yet
 
-        private readonly List<ScheduleRow> _plan = new List<ScheduleRow>();   // plan from the source, not shown
-        private readonly ObservableCollection<ScheduleRow> _hourly = new ObservableCollection<ScheduleRow>(); // the table
-        private ScheduleRow _liveRow;                                         // this hour's line in the table
+        // ---- schedule (from the DailyScheduler database) ----
+        private readonly KanbanTracker _tracker = new KanbanTracker();
+        private KanbanLine _line;                                     // null = no line picked / no schedule today
+        private DateTime _date = DateTime.Today;
+        private List<KanbanJob> _jobs = new List<KanbanJob>();
+        private KanbanJob _current;                                   // the job on the boards
+        private DateTime _lastRead = DateTime.MinValue;
+        private bool _reading;
+
+        // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
         private readonly HashSet<string> _allScanned = new HashSet<string>();   // duplicate check
-        private string _selectedLine = "";
         private bool _pickerOpen;
         private readonly DispatcherTimer _clockTimer = new DispatcherTimer();
         private readonly DispatcherTimer _holdTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)   // how long 10 / 10 stays on screen
         };
-
-        // current product: every value below comes from the active schedule row
-        private ScheduleRow _active;
-        private int RatePerHour => _active?.Target ?? 0;
-        private int ScanPerBox => _active?.ScanPerBox ?? 1;
-        private int BoxesPerPallet => _active?.BoxesPerPallet ?? 1;
-
-        // running numbers
-        private DateTime _segmentStart;
-        private int _countBanked, _countJam, _countTotal;
-        private int _actualTotal, _actualJam;
+        private int ScanPerBox => _current != null && _current.QtyPerBox > 0 ? _current.QtyPerBox : 1;
+        private int BoxesPerPallet => DefaultBoxesPerPallet;
         private int _scansInBox, _boxCount, _palletCount;
 
         public DashboardProduksiELRWindow()
         {
             InitializeComponent();
             lstScans.ItemsSource = _scans;
-
-            dgvSchedule.ItemsSource = _hourly;
 
             _holdTimer.Tick += (s, e) =>
             {
@@ -57,95 +56,128 @@ namespace LineProductionWPF
                 UpdateScanCounters();                                                          // show the real 0
             };
 
-            LoadSchedule();
-
             _clockTimer.Interval = TimeSpan.FromSeconds(1);
-            _clockTimer.Tick += (s, e) => { UpdateClock(); RefreshCards(); };
+            _clockTimer.Tick += (s, e) => Tick();
             _clockTimer.Start();
 
             UpdateClock();
-            RefreshCards();
+            Render();
         }
 
         // ---------- data in ----------
-        private void LoadSchedule()
+        private async Task PickFirstLine()
         {
-            _plan.Clear();
-            _plan.AddRange(_source.GetSchedule());
-            if (_selectedLine == "")
-                _selectedLine = _plan.Select(r => r.NomorLine).FirstOrDefault() ?? "";
-            NomorLine.Text = _selectedLine;
+            try
+            {
+                var lines = await Task.Run(() => SchedulerDb.LoadScheduledLines(_date));
+                if (lines.Count > 0) SelectLine(lines[0]);
+                else ShowNoSchedule();
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text = "Gagal membaca database: " + ex.Message;
+            }
         }
 
-        private ScheduleRow FindActiveRow()
+        private void ShowNoSchedule()
         {
-            int hour = DateTime.Now.Hour;
-            return _plan.FirstOrDefault(r => r.NomorLine == _selectedLine && r.Jam == hour);
+            _line = null;
+            NomorLine.Text = "TIDAK ADA JADWAL";
+            txtStatus.Text = "Belum ada jadwal untuk tanggal " + _date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + ".";
         }
 
-        private void ApplyActiveRow()
+        private void SelectLine(KanbanLine line)
         {
-            ScheduleRow row = FindActiveRow();
-            if (row == _active) return;
+            _line = line;
+            _date = DateTime.Today;
+            NomorLine.Text = line.Name;
+            _jobs = new List<KanbanJob>();
+            _tracker.Open(_date, line.Id);
+            ResetScanPanel();
+            _lastRead = DateTime.MinValue;   // read right away
+            Tick();
+        }
 
-            bool newJob = _active == null || row == null || _active.JobNo != row.JobNo;
+        // every second: clock, count, and (every few seconds) a fresh read of the scan numbers
+        private async void Tick()
+        {
+            UpdateClock();
 
-            if (_active != null)
+            if (_line != null && _date != DateTime.Today)   // midnight: a new day, a new schedule
             {
-                UpdateCount(DateTime.Now);   // recalculate at the exact moment of the change
-                _countBanked += _countJam;
+                _date = DateTime.Today;
+                _jobs = new List<KanbanJob>();
+                _tracker.Open(_date, _line.Id);
+                _lastRead = DateTime.MinValue;
             }
-            _active = row;
-            _segmentStart = DateTime.Now;
-            _countJam = 0;
-            _actualJam = 0;
 
-            if (newJob)
+            if (_line != null && !_reading && DateTime.Now - _lastRead >= RefreshEvery)
             {
-                _scansInBox = 0;
-                _scans.Clear();
-            }
-
-            PartNomor.Text = row?.PartNumber ?? "-";
-            JobNo.Text = row?.JobNo ?? "-";
-
-            // start this hour's line in the table
-            if (row == null)
-            {
-                _liveRow = null;
-            }
-            else
-            {
-                _liveRow = new ScheduleRow
+                _reading = true;
+                _lastRead = DateTime.Now;
+                var line = _line;
+                var date = _date;
+                try
                 {
-                    Jadwal = row.Jadwal,
-                    Jam = row.Jam,
-                    PartNumber = row.PartNumber,
-                    JobNo = row.JobNo,
-                    Target = row.Target
-                };
-                _hourly.Add(_liveRow);
+                    var jobs = await Task.Run(() => SchedulerDb.LoadJobs(date, line.Id));
+                    if (ReferenceEquals(line, _line) && date == _date)
+                    {
+                        _jobs = jobs;
+                        _tracker.Update(_jobs, DateTime.Now);
+                        txtStatus.Text = jobs.Count == 0
+                            ? "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
+                            : "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    txtStatus.Text = "Gagal membaca database (angka terakhir tetap ditampilkan): " + ex.Message;
+                }
+                finally
+                {
+                    _reading = false;
+                }
             }
+
+            Render();
         }
-        private void UpdateHourlyRow()
+
+        // ---------- display ----------
+        private void Render()
         {
-            if (_liveRow == null) return;
+            KanbanNumbers n = _tracker.Calculate(_jobs, DateTime.Now);
 
-            int jumlahTarget = _countTotal;
-            int actual = _actualJam;
-            int jumlahActual = _actualTotal;
-            int selisih = _actualTotal - _countTotal;
+            // the next job became current: the scan panel starts fresh
+            if (!ReferenceEquals(n.Current, _current) && (n.Current == null || _current == null || n.Current.Urutan != _current.Urutan))
+                ResetScanPanel();
+            _current = n.Current;
 
-            // only touch the table when something changed
-            if (_liveRow.JumlahTarget == jumlahTarget && _liveRow.Actual == actual
-                && _liveRow.JumlahActual == jumlahActual && _liveRow.Selisih == selisih) return;
+            PartNomor.Text = _current?.PartNumber ?? "-";
+            JobNo.Text = _current == null ? "-" : _current.JobNo;
+            Posisi.Text = _current == null ? "-" : _current.Posisi;
 
-            _liveRow.JumlahTarget = jumlahTarget;
-            _liveRow.Actual = actual;
-            _liveRow.JumlahActual = jumlahActual;
-            _liveRow.Selisih = selisih;
+            txtTarget.Text = n.TargetJob.ToString();
+            txtTargetJam.Text = "/" + n.TargetDay;
+            txtActual.Text = n.ActualJob.ToString();
+            txtActualJam.Text = "/" + n.ActualDay;
+            txtCount.Text = n.CountJob.ToString();
+            txtCountJam.Text = "/" + n.CountDay;
 
-            dgvSchedule.Items.Refresh();   // the row class has no change notification yet
+            UpdateSelisih(n.SelisihJob, n.SelisihDay);
+            UpdateScanCounters();
+
+            // the table: re-bind when the jobs list changed, otherwise only refresh the numbers
+            if (!ReferenceEquals(dgvSchedule.ItemsSource, _jobs)) dgvSchedule.ItemsSource = _jobs;
+            else dgvSchedule.Items.Refresh();
+        }
+
+        private void ResetScanPanel()
+        {
+            _holdTimer.Stop();
+            txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4));
+            _scans.Clear();
+            _allScanned.Clear();
+            _scansInBox = _boxCount = _palletCount = 0;
         }
 
         // ---------- scanning ----------
@@ -159,15 +191,14 @@ namespace LineProductionWPF
         }
 
         // Scanner, serial and server events should all end up here.
+        // NOTE: this only fills the box / pallet panel. The ACTUAL board shows what the database holds (sticker_scan).
         private void ProcessScan(string code)
         {
-            if (_active == null) return;            // no schedule this hour: ignore scans
+            if (_current == null) return;           // no schedule: ignore scans
             if (!_allScanned.Add(code)) return;     // duplicate (red flash and beep go here later)
 
             _scans.Add(code);
             lstScans.ScrollIntoView(code);
-            _actualTotal++;
-            _actualJam++;
             _scansInBox++;
 
             if (_scansInBox >= ScanPerBox)          // box full
@@ -184,7 +215,7 @@ namespace LineProductionWPF
                 }
             }
 
-            RefreshCards();
+            UpdateScanCounters();
         }
 
         private void ShowPalletFull()
@@ -194,36 +225,6 @@ namespace LineProductionWPF
 
             _holdTimer.Stop();
             _holdTimer.Start();                     // restarts the one-second wait
-        }
-
-        // ---------- display ----------
-        private void UpdateCount(DateTime now)
-        {
-            if (_active == null)
-            {
-                _countJam = 0;
-            }
-            else
-            {
-                int seconds = (int)(now - _segmentStart).TotalSeconds;
-                _countJam = seconds * RatePerHour / 3600;   // +1 every (3600 / rate) seconds
-            }
-            _countTotal = _countBanked + _countJam;
-        }
-
-        private void RefreshCards()
-        {
-            ApplyActiveRow();
-            UpdateCount(DateTime.Now);
-
-            txtActual.Text = _actualTotal.ToString();
-            txtActualJam.Text = _actualJam.ToString();
-            txtCount.Text = _countTotal.ToString();
-            txtCountJam.Text = _countJam.ToString();
-
-            UpdateSelisih(_actualTotal - _countTotal, _actualJam - _countJam);
-            UpdateScanCounters();
-            UpdateHourlyRow();
         }
 
         private void UpdateScanCounters()
@@ -239,10 +240,10 @@ namespace LineProductionWPF
             }
         }
 
-        private void UpdateSelisih(int selisih, int selisihJam)
+        private void UpdateSelisih(int selisih, int selisihHari)
         {
             txtSelisih.Text = selisih.ToString();
-            txtSelisihJam.Text = selisihJam.ToString();
+            txtSelisihJam.Text = selisihHari.ToString();
 
             const int tolerance = 50;   // how far behind counts as the deepest red
 
@@ -276,19 +277,6 @@ namespace LineProductionWPF
             return brightness > 130 ? Brushes.Black : Brushes.White;
         }
 
-        private static Color GetStatusColor(double ratio)
-        {
-            Color green = (Color)ColorConverter.ConvertFromString("#22C55E");
-            Color yellow = (Color)ColorConverter.ConvertFromString("#FACC15");
-            Color red = (Color)ColorConverter.ConvertFromString("#EF4444");
-
-            if (ratio < 0.5)
-            {
-                return Blend(green, yellow, ratio / 0.5);
-            }
-            return Blend(yellow, red, (ratio - 0.5) / 0.5);
-        }
-
         private static Color Blend(Color a, Color b, double t)
         {
             return Color.FromRgb(
@@ -304,9 +292,10 @@ namespace LineProductionWPF
         }
 
         // ---------- keep the cursor in the scan box ----------
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             txtScan.Focus();
+            await PickFirstLine();
         }
 
         private void Window_Activated(object sender, EventArgs e)
@@ -337,61 +326,49 @@ namespace LineProductionWPF
             base.OnClosed(e);
         }
 
-         // ---------- ganti nomor line ----------
-
-        private void bdNomorLine_Click(object sender, MouseButtonEventArgs e)
+        // ---------- ganti nomor line: only lines that have a schedule today ----------
+        private async void bdNomorLine_Click(object sender, MouseButtonEventArgs e)
         {
+            List<KanbanLine> lines;
+            try
+            {
+                lines = await Task.Run(() => SchedulerDb.LoadScheduledLines(DateTime.Today));   // fresh: a schedule may have been made just now
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text = "Gagal membaca database: " + ex.Message;
+                return;
+            }
+
+            if (lines.Count == 0)
+            {
+                ShowNoSchedule();
+                return;
+            }
+
             var menu = new ContextMenu
             {
                 PlacementTarget = bdNomorLine,
                 Placement = PlacementMode.Bottom
             };
 
-            foreach (string line in _plan.Select(r => r.NomorLine).Distinct())
+            foreach (KanbanLine line in lines)
             {
                 var item = new MenuItem
                 {
-                    Header = line,
+                    Header = line.Name,
                     FontSize = 24,
                     Padding = new Thickness(12, 8, 12, 8),
-                    IsChecked = line == _selectedLine
+                    IsChecked = _line != null && line.Id == _line.Id
                 };
-                item.Click += (s, args) => SelectLine(line);
+                var chosen = line;
+                item.Click += (s, args) => { if (_line == null || chosen.Id != _line.Id) SelectLine(chosen); };
                 menu.Items.Add(item);
             }
 
             _pickerOpen = true;
             menu.Closed += (s, args) => { _pickerOpen = false; txtScan.Focus(); };
             menu.IsOpen = true;
-        }
-
-        private void SelectLine(string line)
-        {
-            if (line == _selectedLine) return;
-
-            var answer = MessageBox.Show(
-                "Ganti ke " + line + "?\nHitungan saat ini akan direset.",
-                "Ganti Line", MessageBoxButton.YesNo, MessageBoxImage.Question);
-            if (answer != MessageBoxResult.Yes) return;
-
-            _selectedLine = line;
-            NomorLine.Text = line;
-            PartNomor.Text = "-";
-            JobNo.Text = "-";
-
-            // reset everything that belonged to the old line
-            _holdTimer.Stop();
-            txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4));
-            _active = null;
-            _liveRow = null;
-            _hourly.Clear();
-            _scans.Clear();
-            _allScanned.Clear();
-            _countBanked = _countJam = _countTotal = 0;
-            _actualTotal = _actualJam = 0;
-            _scansInBox = _boxCount = _palletCount = 0;
-
-            RefreshCards();
         }
     }
 }

@@ -22,6 +22,7 @@ namespace LineProductionWPF
         public int Jumlah { get; set; }          // planned quantity of this job
         public int Target { get; set; }          // rate: pcs per hour (product.target_per_jam)
         public int Discan { get; set; }          // scanned on the line so far
+        public int QtyPerBox { get; set; }       // pieces that make one box (product.qty_per_box), 0 = unknown
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
@@ -106,6 +107,24 @@ namespace LineProductionWPF
             return list;
         }
 
+        /// <summary>Only the lines that have a saved schedule on this date (what the line picker offers).</summary>
+        public static List<KanbanLine> LoadScheduledLines(DateTime tanggal)
+        {
+            var list = new List<KanbanLine>();
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText =
+                "SELECT DISTINCT lp.id, lp.name FROM schedule s " +
+                "JOIN line_production lp ON lp.id = s.line_production_id " +
+                "WHERE s.tanggal = @tanggal ORDER BY lp.name";
+            cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                list.Add(new KanbanLine { Id = r.GetInt32(0), Name = r.GetString(1) });
+            return list;
+        }
+
         /// <summary>The jobs of this date + line in schedule order, each with its scanned count. Empty = no schedule saved.</summary>
         public static List<KanbanJob> LoadJobs(DateTime tanggal, int lineProductionId)
         {
@@ -116,7 +135,7 @@ namespace LineProductionWPF
             cmd.CommandText =
                 "SELECT i.urutan, i.barcode, i.jumlah, " +
                 "       COALESCE(p.part_number_code, p.part_number), p.job_no, p.position, p.target_per_jam, " +
-                "       ISNULL(v.discan, 0) " +
+                "       ISNULL(v.discan, 0), ISNULL(p.qty_per_box, 0) " +
                 "FROM schedule s " +
                 "JOIN schedule_item i ON i.schedule_id = s.id " +
                 "LEFT JOIN product p ON p.barcode = i.barcode " +
@@ -139,7 +158,8 @@ namespace LineProductionWPF
                     JobNo = r.IsDBNull(4) ? "-" : r.GetString(4),
                     Posisi = r.IsDBNull(5) ? "-" : r.GetString(5),
                     Target = r.IsDBNull(6) ? 0 : r.GetInt32(6),
-                    Discan = r.GetInt32(7)
+                    Discan = r.GetInt32(7),
+                    QtyPerBox = r.GetInt32(8)
                 });
             }
             return list;
