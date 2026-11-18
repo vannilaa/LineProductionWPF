@@ -17,9 +17,11 @@
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
         <Style x:Key="HeaderButton" TargetType="Button" BasedOn="{StaticResource AppButton}">
-            <Setter Property="Width" Value="110"/>
-            <Setter Property="Height" Value="24"/>
-            <Setter Property="Margin" Value="5"/>
+            <Setter Property="Height" Value="48"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="HorizontalContentAlignment" Value="Center"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FontSize" Value="16"/>
         </Style>
         <Style x:Key="StopButton" TargetType="Button" BasedOn="{StaticResource HeaderButton}">
             <Setter Property="Background" Value="Red"/>
@@ -130,9 +132,11 @@
                     <ColumnDefinition Width="Auto"/>   <!-- part number -->
                     <ColumnDefinition Width="Auto"/>   <!-- job no / posisi -->
                     <ColumnDefinition Width="*"/>      <!-- empty space: pushes the rest right -->
-                    <ColumnDefinition Width="Auto"/>   <!-- buttons 1 -->
-                    <ColumnDefinition Width="Auto"/>   <!-- buttons 2 -->
-                    <ColumnDefinition Width="Auto"/>   <!-- clock -->
+                    <ColumnDefinition Width="*"/>      <!-- Kendala -->
+                    <ColumnDefinition Width="*"/>      <!-- Ganti Target -->
+                    <ColumnDefinition Width="*"/>      <!-- Cetak Ulang -->
+                    <ColumnDefinition Width="*"/>      <!-- Stop Counter -->
+                    <ColumnDefinition Width="Auto"/>   <!-- date and time -->
                 </Grid.ColumnDefinitions>
 
                 <Border x:Name="bdNomorLine" Grid.Column="0" Background="#0234FD" CornerRadius="6"
@@ -153,18 +157,17 @@
                     <TextBlock x:Name="Posisi" Text="POSISI" Style="{StaticResource HeaderSub}"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="4" VerticalAlignment="Center">
-                    <Button Content="Kendala" Style="{StaticResource HeaderButton}"/>
-                    <Button Content="Ganti Target" Style="{StaticResource HeaderButton}"/>
-                </StackPanel>
+                <Button Grid.Column="4" Content="Kendala" Style="{StaticResource HeaderButton}"/>
+                <Button Grid.Column="5" Content="Ganti Target" Style="{StaticResource HeaderButton}"/>
+                <Button Grid.Column="6" Content="Cetak Ulang" Style="{StaticResource HeaderButton}"/>
+                <Button Grid.Column="7" Content="Stop Counter" Style="{StaticResource StopButton}"/>
 
-                <StackPanel Grid.Column="5" VerticalAlignment="Center">
-                    <Button Content="Cetak Ulang" Style="{StaticResource HeaderButton}"/>
-                    <Button Content="Stop Counter" Style="{StaticResource StopButton}"/>
+                <StackPanel Grid.Column="8" Margin="10,0" VerticalAlignment="Center" HorizontalAlignment="Center">
+                    <TextBlock x:Name="txtClockDate" Text="28 Oktober 2026"
+                               FontSize="18" HorizontalAlignment="Center"/>
+                    <TextBlock x:Name="txtClockTime" Text="14:56:12"
+                               FontSize="22" FontWeight="Bold" HorizontalAlignment="Center"/>
                 </StackPanel>
-
-                <TextBlock x:Name="txtClock" Grid.Column="6" Text="28 Oktober 2026 14:56:12"
-                           FontSize="24" Margin="10,0" VerticalAlignment="Center"/>
             </Grid>
         </Border>
 
