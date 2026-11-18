@@ -30,6 +30,7 @@ namespace LineProductionWPF
         public int BoxesRequired { get; set; }   // boxes needed for this job's planned quantity
         public int CompletedBoxes { get; set; }  // boxes already closed in the database
         public int OpenBoxScans { get; set; }    // scans in the box that is still open
+        public string Customer { get; set; } = "";   // product.customer, e.g. "PT. ASTRA DAIHATSU MOTOR"
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
@@ -170,7 +171,8 @@ namespace LineProductionWPF
                 "       (SELECT COUNT(*) FROM dbo.box b WHERE b.tanggal = s.tanggal AND b.line_production_id = s.line_production_id " +
                 "          AND b.barcode = i.barcode AND b.closed_at IS NOT NULL), " +
                 "       (SELECT COUNT(*) FROM sticker_scan c JOIN dbo.box b ON b.id = c.box_id WHERE b.tanggal = s.tanggal " +
-                "          AND b.line_production_id = s.line_production_id AND b.barcode = i.barcode AND b.closed_at IS NULL) " +
+                "          AND b.line_production_id = s.line_production_id AND b.barcode = i.barcode AND b.closed_at IS NULL), " +
+                "       p.customer " +
                 "FROM schedule s " +
                 "JOIN schedule_item i ON i.schedule_id = s.id " +
                 "LEFT JOIN product p ON p.barcode = i.barcode " +
@@ -198,7 +200,8 @@ namespace LineProductionWPF
                     Part = r.IsDBNull(9) ? "" : r.GetString(9),
                     BoxesRequired = r.GetInt32(10),
                     CompletedBoxes = r.GetInt32(11),
-                    OpenBoxScans = r.GetInt32(12)
+                    OpenBoxScans = r.GetInt32(12),
+                    Customer = r.IsDBNull(13) ? "" : r.GetString(13).Trim()
                 });
             }
             return list;

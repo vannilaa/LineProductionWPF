@@ -177,6 +177,7 @@ namespace LineProductionWPF
             }
             _syncBoxProgress = false;
 
+            UpdateCustomer(_current?.Customer);
             PartNomor.Text = _current?.PartNumber ?? "-";
             JobNo.Text = _current == null ? "-" : _current.JobNo;
             Posisi.Text = _current == null || _current.PosisiPart.Length == 0 ? "-" : _current.PosisiPart;
@@ -194,6 +195,21 @@ namespace LineProductionWPF
             // the table: re-bind when the jobs list changed, otherwise only refresh the numbers
             if (!ReferenceEquals(dgvSchedule.ItemsSource, _jobs)) dgvSchedule.ItemsSource = _jobs;
             else dgvSchedule.Items.Refresh();
+        }
+
+        // Customer name + logo of the current job. Render() runs every second, so only reload the logo file when the customer changes.
+        private string? _customerShown;
+
+        private void UpdateCustomer(string? customer)
+        {
+            customer = (customer ?? "").Trim();
+            if (customer == _customerShown) return;
+            _customerShown = customer;
+
+            txtCustomer.Text = customer.Length == 0 ? "-" : customer;
+            var logo = CustomerLogo.Load(customer);
+            imgCustomerLogo.Source = logo;
+            imgCustomerLogo.Visibility = logo == null ? Visibility.Collapsed : Visibility.Visible;
         }
 
         private void ResetScanPanel()

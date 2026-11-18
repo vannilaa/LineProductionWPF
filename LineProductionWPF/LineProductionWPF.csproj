@@ -10,6 +10,13 @@
   </PropertyGroup>
 
 
+  <!-- Customer logos (Logos\<customer>.ico or .png) are copied next to the .exe -->
+  <ItemGroup>
+    <None Update="Logos\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
   </ItemGroup>

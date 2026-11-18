@@ -17,11 +17,13 @@
             <Setter Property="FontWeight" Value="Bold"/>
         </Style>
         <Style x:Key="HeaderButton" TargetType="Button" BasedOn="{StaticResource AppButton}">
-            <Setter Property="Height" Value="48"/>
-            <Setter Property="Margin" Value="4"/>
+            <!-- compact 2 x 2 block: fixed size so all four buttons are equal and the header stays low -->
+            <Setter Property="Width" Value="120"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="Margin" Value="3"/>
             <Setter Property="HorizontalContentAlignment" Value="Center"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="FontSize" Value="16"/>
+            <Setter Property="FontSize" Value="14"/>
         </Style>
         <Style x:Key="StopButton" TargetType="Button" BasedOn="{StaticResource HeaderButton}">
             <Setter Property="Background" Value="Red"/>
@@ -131,7 +133,7 @@
                     <ColumnDefinition Width="Auto"/>   <!-- line number -->
                     <ColumnDefinition Width="Auto"/>   <!-- part number -->
                     <ColumnDefinition Width="Auto"/>   <!-- job no / posisi -->
-                    <ColumnDefinition Width="*"/>      <!-- empty space: pushes the rest right -->
+                    <ColumnDefinition Width="*" MinWidth="170"/>   <!-- customer logo + name (takes the free space) -->
                     <ColumnDefinition Width="Auto"/>   <!-- buttons 1 -->
                     <ColumnDefinition Width="Auto"/>   <!-- buttons 2 -->
                     <ColumnDefinition Width="Auto"/>   <!-- date and time -->
@@ -154,6 +156,22 @@
                     <TextBlock x:Name="JobNo" Text="JOB NO" Style="{StaticResource HeaderSub}"/>
                     <TextBlock x:Name="Posisi" Text="POSISI" Style="{StaticResource HeaderSub}"/>
                 </StackPanel>
+
+                <!-- Customer of the current job: logo (hidden when there is no logo file) + name.
+                     A long name wraps onto the lines below (max 3) instead of being cut off. -->
+                <Grid Grid.Column="3" Margin="10,0" VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Image x:Name="imgCustomerLogo" Grid.Column="0" Visibility="Collapsed"
+                           MaxWidth="72" MaxHeight="56" Stretch="Uniform" Margin="0,0,10,0"
+                           RenderOptions.BitmapScalingMode="HighQuality"/>
+                    <TextBlock x:Name="txtCustomer" Grid.Column="1" Text="CUSTOMER"
+                               FontSize="18" FontWeight="Bold" Foreground="#374151"
+                               TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"/>
+                </Grid>
 
                 <StackPanel Grid.Column="4" VerticalAlignment="Center">
                     <Button Content="Kendala" Style="{StaticResource HeaderButton}"/>
