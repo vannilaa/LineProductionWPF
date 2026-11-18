@@ -210,7 +210,7 @@ namespace LineProductionWPF
                 string message = "";
                 int completedBoxes = 0;
                 int scansInOpenBox = 0;
-                int qtyPerBox = job.QtyPerBox;
+                int qtyPerBox = job.QtyPerBox > 0 ? job.QtyPerBox : 1;
                 int plannedQuantity = job.Jumlah;
                 bool saved = await Task.Run(() =>
                     SchedulerDb.RecordStickerScan(date, line.Id, barcode, code, qtyPerBox, plannedQuantity,
