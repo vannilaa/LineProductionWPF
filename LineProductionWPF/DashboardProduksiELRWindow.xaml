@@ -248,6 +248,7 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>   <!-- inline scan warning -->
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>   <!-- list fills the rest -->
@@ -259,9 +260,22 @@
                              KeyDown="txtScan_KeyDown"
                              LostKeyboardFocus="txtScan_LostKeyboardFocus"/>
 
-                    <TextBlock x:Name="txtScanPerBox" Grid.Row="2" Text="SCAN per BOX"/>
+                    <!-- Inline warning (replaces the old pop-up window). Never takes focus, so scanning is not interrupted. -->
+                    <Border x:Name="scanBanner" Grid.Row="2" Visibility="Collapsed"
+                            Margin="0,0,0,5" Padding="10,6" CornerRadius="4"
+                            BorderThickness="4,0,0,0" Focusable="False" IsHitTestVisible="False"
+                            Background="#FEF2F2" BorderBrush="Firebrick">
+                        <StackPanel>
+                            <TextBlock x:Name="txtBannerTitle" FontSize="14" FontWeight="Bold" Foreground="Firebrick"/>
+                            <TextBlock x:Name="txtBannerMessage" FontSize="13" TextWrapping="Wrap" Foreground="Black"/>
+                            <TextBlock x:Name="txtBannerSerial" FontSize="12" FontFamily="Consolas" Foreground="DimGray"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
 
-                    <Border Grid.Row="3" Background="#EEF4FA" Padding="8,4" Margin="0,5,0,0">
+                    <TextBlock x:Name="txtScanPerBox" Grid.Row="3" Text="SCAN per BOX"/>
+
+                    <Border Grid.Row="4" Background="#EEF4FA" Padding="8,4" Margin="0,5,0,0">
                         <Grid>
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Bottom">
                                 <TextBlock x:Name="txtScanned" Text="0" FontSize="24" FontWeight="Bold" Foreground="#2F6FE4"/>
@@ -273,7 +287,7 @@
                         </Grid>
                     </Border>
 
-                    <ListBox x:Name="lstScans" Grid.Row="4" Margin="0,10,0,0"
+                    <ListBox x:Name="lstScans" Grid.Row="5" Margin="0,10,0,0"
                              d:ItemsSource="{d:SampleData ItemCount=20}"
                              BorderBrush="Black" Background="#FFF1E2E2" FontFamily="Consolas"/>
                 </Grid>

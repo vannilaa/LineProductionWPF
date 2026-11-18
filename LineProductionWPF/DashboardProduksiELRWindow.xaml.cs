@@ -42,8 +42,7 @@ namespace LineProductionWPF
         private bool _scanBusy;
         private int _scanVersion;          // +1 per saved scan: tells whether a database read is older than a scan
         private bool _syncBoxProgress;     // next Render() takes the box progress from the (fresh) database read
-        private Window? _scanPopup;
-        private readonly DispatcherTimer _popupTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+        private readonly DispatcherTimer _popupTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
         private readonly DispatcherTimer _clockTimer = new DispatcherTimer();
         private readonly DispatcherTimer _holdTimer = new DispatcherTimer
         {
@@ -316,80 +315,31 @@ namespace LineProductionWPF
             }
         }
 
-        // One small warning window at a time. It must not take the keyboard focus, or the scanner's next
-        // characters would go to the popup instead of the scan box and be lost.
+        // Inline warning banner in the scan panel (no separate window). It is not focusable, so the scanner's
+        // next characters keep going to the scan box. A new warning replaces the previous one.
         private void ShowScanPopup(string message, string serial, ScanOutcome outcome)
         {
-            CloseScanPopup();
-
             bool unknownSerial = outcome == ScanOutcome.NotFound;
             Brush accent = unknownSerial ? Brushes.DarkOrange : Brushes.Firebrick;
-            var popup = new Window
-            {
-                Title = unknownSerial ? "Serial tidak dikenal" : "Scan ditolak",
-                Width = 420,
-                SizeToContent = SizeToContent.Height,
-                ResizeMode = ResizeMode.NoResize,
-                WindowStyle = WindowStyle.ToolWindow,
-                ShowInTaskbar = false,
-                ShowActivated = false,
-                Topmost = true,
-                Owner = this,
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Background = unknownSerial
-                    ? new SolidColorBrush(Color.FromRgb(0xFF, 0xF7, 0xED))
-                    : new SolidColorBrush(Color.FromRgb(0xFE, 0xF2, 0xF2)),
-                Content = new Border
-                {
-                    Padding = new Thickness(18),
-                    BorderThickness = new Thickness(4, 0, 0, 0),
-                    BorderBrush = accent,
-                    Child = new StackPanel
-                    {
-                        Children =
-                        {
-                            new TextBlock
-                            {
-                                Text = unknownSerial ? "SERIAL TIDAK DIKENAL" : "SCAN DITOLAK",
-                                FontSize = 20,
-                                FontWeight = FontWeights.Bold,
-                                Foreground = accent,
-                                Margin = new Thickness(0, 0, 0, 8)
-                            },
-                            new TextBlock
-                            {
-                                Text = message,
-                                FontSize = 15,
-                                TextWrapping = TextWrapping.Wrap,
-                                Foreground = Brushes.Black,
-                                Margin = new Thickness(0, 0, 0, 8)
-                            },
-                            new TextBlock
-                            {
-                                Text = "Serial: " + serial,
-                                FontSize = 14,
-                                FontWeight = FontWeights.SemiBold,
-                                FontFamily = new FontFamily("Consolas"),
-                                Foreground = Brushes.DimGray,
-                                TextWrapping = TextWrapping.Wrap
-                            }
-                        }
-                    }
-                }
-            };
 
-            _scanPopup = popup;
-            popup.Show();
+            scanBanner.Background = unknownSerial
+                ? new SolidColorBrush(Color.FromRgb(0xFF, 0xF7, 0xED))
+                : new SolidColorBrush(Color.FromRgb(0xFE, 0xF2, 0xF2));
+            scanBanner.BorderBrush = accent;
+            txtBannerTitle.Foreground = accent;
+            txtBannerTitle.Text = unknownSerial ? "SERIAL TIDAK DIKENAL" : "SCAN DITOLAK";
+            txtBannerMessage.Text = message;
+            txtBannerSerial.Text = "Serial: " + serial;
+            scanBanner.Visibility = Visibility.Visible;
+
             _popupTimer.Stop();
-            _popupTimer.Start();   // restarts the 2.5 second wait
+            _popupTimer.Start();   // restarts the wait
         }
 
         private void CloseScanPopup()
         {
             _popupTimer.Stop();
-            Window? popup = _scanPopup;
-            _scanPopup = null;
-            popup?.Close();
+            scanBanner.Visibility = Visibility.Collapsed;
         }
 
         private void ShowPalletFull()
