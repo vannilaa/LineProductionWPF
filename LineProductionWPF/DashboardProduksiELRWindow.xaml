@@ -132,10 +132,8 @@
                     <ColumnDefinition Width="Auto"/>   <!-- part number -->
                     <ColumnDefinition Width="Auto"/>   <!-- job no / posisi -->
                     <ColumnDefinition Width="*"/>      <!-- empty space: pushes the rest right -->
-                    <ColumnDefinition Width="*"/>      <!-- Kendala -->
-                    <ColumnDefinition Width="*"/>      <!-- Ganti Target -->
-                    <ColumnDefinition Width="*"/>      <!-- Cetak Ulang -->
-                    <ColumnDefinition Width="*"/>      <!-- Stop Counter -->
+                    <ColumnDefinition Width="Auto"/>   <!-- buttons 1 -->
+                    <ColumnDefinition Width="Auto"/>   <!-- buttons 2 -->
                     <ColumnDefinition Width="Auto"/>   <!-- date and time -->
                 </Grid.ColumnDefinitions>
 
@@ -157,12 +155,17 @@
                     <TextBlock x:Name="Posisi" Text="POSISI" Style="{StaticResource HeaderSub}"/>
                 </StackPanel>
 
-                <Button Grid.Column="4" Content="Kendala" Style="{StaticResource HeaderButton}"/>
-                <Button Grid.Column="5" Content="Ganti Target" Style="{StaticResource HeaderButton}"/>
-                <Button Grid.Column="6" Content="Cetak Ulang" Style="{StaticResource HeaderButton}"/>
-                <Button Grid.Column="7" Content="Stop Counter" Style="{StaticResource StopButton}"/>
+                <StackPanel Grid.Column="4" VerticalAlignment="Center">
+                    <Button Content="Kendala" Style="{StaticResource HeaderButton}"/>
+                    <Button Content="Ganti Target" Style="{StaticResource HeaderButton}"/>
+                </StackPanel>
 
-                <StackPanel Grid.Column="8" Margin="10,0" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel Grid.Column="5" VerticalAlignment="Center">
+                    <Button Content="Cetak Ulang" Style="{StaticResource HeaderButton}"/>
+                    <Button Content="Stop Counter" Style="{StaticResource StopButton}"/>
+                </StackPanel>
+
+                <StackPanel Grid.Column="6" Margin="10,0" VerticalAlignment="Center" HorizontalAlignment="Center">
                     <TextBlock x:Name="txtClockDate" Text="28 Oktober 2026"
                                FontSize="18" HorizontalAlignment="Center"/>
                     <TextBlock x:Name="txtClockTime" Text="14:56:12"
