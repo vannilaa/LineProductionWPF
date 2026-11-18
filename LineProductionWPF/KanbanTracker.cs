@@ -3,13 +3,11 @@ using System.Text.Json;
 
 namespace LineProductionWPF
 {
-    /// <summary>When a job became current / finished. Kept on disk so a restart of the app does not lose the count.</summary>
-    public class JobTiming
+    /// <summary>A stretch of time during which the counter was paused ("Jeda Counter"). To is null while it is still paused.</summary>
+    public class PauseSpan
     {
-        public DateTime? Start { get; set; }
-        public DateTime? End { get; set; }
-        public bool Unobserved { get; set; }   // job was already complete when the app first saw it: its start is unknown
-        public double PausedSeconds { get; set; }   // time the counter was paused while this job was running (not counted)
+        public DateTime From { get; set; }
+        public DateTime? To { get; set; }
     }
 
     /// <summary>The numbers of the four kanban boards (big = current job, small = whole day).</summary>
@@ -20,160 +18,125 @@ namespace LineProductionWPF
 
         public int TargetJob, TargetDay;     // board 1: planned quantity
         public int ActualJob, ActualDay;     // board 2: scanned
-        public int CountJob, CountDay;       // board 3: expected at the job's pcs/hour since it became current
+        public int CountJob, CountDay;       // board 3: expected at the job's pcs/hour since it started
         public int SelisihJob, SelisihDay;   // board 4: actual - count
     }
 
     /// <summary>
-    /// Decides which job is current and turns the schedule + scan numbers into the board numbers.
+    /// Decides which job is current and turns the schedule + scan numbers into the board numbers and the job times.
     ///  - Current job = first job whose scanned count is below its Jumlah (all done: the last job).
-    ///  - The first job starts at 08:00; each later job starts when the previous job completes.
-    ///  - Count = elapsed seconds x pcs per hour / 3600, never above Jumlah, frozen when the job completes
-    ///    and while the counter is paused.
+    ///  - Time is WORKING time (see WorkCalendar): breaks and time outside the shift do not count.
+    ///  - The first job starts at the first working moment of the day, or when the schedule was created if that was later.
+    ///    Each later job starts when the previous job really finished (the time of its last scan in the database).
+    ///  - Count = working seconds since the job started x pcs per hour / 3600, never above Jumlah, frozen when the job
+    ///    completes. "Jeda Counter" takes the paused time out of the count (the Count board only, not the job times).
+    ///  - Job times: finished = real start / end. Running = expected end from the pieces still to scan at the planned rate.
+    ///    Waiting = starts when the previous job is expected to end. Selisih Waktu = planned end - expected end
+    ///    (negative = late), where the plan has every job on time, back to back.
     ///  - Day numbers add up every job; the job numbers restart when the next job becomes current.
+    /// Nothing about the jobs is kept on this PC: they all come from the database, so every station shows the same times.
+    /// Only the pauses are kept (kanban_pauses.json), because a pause is only a way to pace the workers on this station.
     /// </summary>
     public class KanbanTracker
     {
-        private readonly Dictionary<int, JobTiming> _timings = new Dictionary<int, JobTiming>();   // by urutan
+        private readonly List<PauseSpan> _pauses = new List<PauseSpan>();
         private string _key = "";
-        private DateTime _firstJobStart;
-        private DateTime? _pausedAt;               // set while the counter is paused ("Jeda Counter")
-        private const int PauseKey = -1;           // _timings entry used to keep the pause on disk (no job has urutan -1)
-
-        public bool IsPaused => _pausedAt != null;
-
-        /// <summary>Pause the count (pcs/hour x elapsed time). Scans are still saved; only the expected count stops.</summary>
-        public void Pause(DateTime now)
-        {
-            if (_pausedAt != null) return;
-            _pausedAt = now;
-            Save();
-        }
-
-        /// <summary>Continue the count: the paused time is taken out of every job it overlapped.</summary>
-        public void Resume(DateTime now)
-        {
-            if (_pausedAt == null) return;
-            DateTime from = _pausedAt.Value;
-            foreach (var t in _timings.Values)
-            {
-                if (t.Start == null) continue;
-                DateTime a = t.Start.Value > from ? t.Start.Value : from;
-                DateTime end = t.End ?? now;
-                DateTime b = end < now ? end : now;
-                if (b > a) t.PausedSeconds += (b - a).TotalSeconds;
-            }
-            _pausedAt = null;
-            Save();
-        }
+        private DateTime _date = DateTime.Today;
 
         private static string StatePath
         {
             get
             {
                 string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LineProductionWPF");
-                return Path.Combine(dir, "kanban_state.json");
+                return Path.Combine(dir, "kanban_pauses.json");
             }
         }
 
-        /// <summary>Switch to another date + line: loads the saved timings of that day (if any).</summary>
+        public bool IsPaused => _pauses.Count > 0 && _pauses[_pauses.Count - 1].To == null;
+
+        /// <summary>Switch to another date + line: loads the pauses saved for that day (if any).</summary>
         public void Open(DateTime date, int lineId)
         {
+            _date = date.Date;
             _key = date.ToString("yyyy-MM-dd") + "|" + lineId;
-            _firstJobStart = date.Date.AddHours(8);
-            _timings.Clear();
-            _pausedAt = null;
+            _pauses.Clear();
             try
             {
                 if (!File.Exists(StatePath)) return;
-                var all = JsonSerializer.Deserialize<Dictionary<string, Dictionary<int, JobTiming>>>(File.ReadAllText(StatePath));
-                if (all != null && all.TryGetValue(_key, out var saved))
-                    foreach (var kv in saved) _timings[kv.Key] = kv.Value;
-                if (_timings.Remove(PauseKey, out var pause)) _pausedAt = pause.Start;
+                var all = JsonSerializer.Deserialize<Dictionary<string, List<PauseSpan>>>(File.ReadAllText(StatePath));
+                if (all != null && all.TryGetValue(_key, out var saved)) _pauses.AddRange(saved);
             }
-            catch { /* unreadable state file: start the day's timing again */ }
+            catch { /* unreadable state file: start the day without pauses */ }
+        }
+
+        /// <summary>Pause the count (pcs/hour x working time). Scans are still saved; only the expected count stops.</summary>
+        public void Pause(DateTime now)
+        {
+            if (IsPaused) return;
+            _pauses.Add(new PauseSpan { From = now });
+            Save();
+        }
+
+        /// <summary>Continue the count: the paused time stays out of it.</summary>
+        public void Resume(DateTime now)
+        {
+            if (!IsPaused) return;
+            _pauses[_pauses.Count - 1].To = now;
+            Save();
         }
 
         private void Save()
         {
             try
             {
-                Dictionary<string, Dictionary<int, JobTiming>> all = new Dictionary<string, Dictionary<int, JobTiming>>();
+                var all = new Dictionary<string, List<PauseSpan>>();
                 if (File.Exists(StatePath))
                 {
-                    try { all = JsonSerializer.Deserialize<Dictionary<string, Dictionary<int, JobTiming>>>(File.ReadAllText(StatePath)) ?? all; }
+                    try { all = JsonSerializer.Deserialize<Dictionary<string, List<PauseSpan>>>(File.ReadAllText(StatePath)) ?? all; }
                     catch { }
                 }
 
                 // keep only the last few days
-                foreach (string old in all.Keys.Where(k => string.CompareOrdinal(k.Substring(0, 10), DateTime.Today.AddDays(-7).ToString("yyyy-MM-dd")) < 0).ToList())
+                foreach (string old in all.Keys.Where(k => k.Length >= 10 &&
+                             string.CompareOrdinal(k.Substring(0, 10), DateTime.Today.AddDays(-7).ToString("yyyy-MM-dd")) < 0).ToList())
                     all.Remove(old);
 
-                var toSave = new Dictionary<int, JobTiming>(_timings);
-                if (_pausedAt != null) toSave[PauseKey] = new JobTiming { Start = _pausedAt };
-                all[_key] = toSave;
+                all[_key] = new List<PauseSpan>(_pauses);
                 Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
                 File.WriteAllText(StatePath, JsonSerializer.Serialize(all));
             }
             catch { /* the board still works without the file */ }
         }
 
-        /// <summary>New scan numbers arrived: note which jobs became current / completed, in schedule order.</summary>
-        public void Update(IList<KanbanJob> jobs, DateTime now)
+        /// <summary>Working seconds between from and to during which the counter was paused.</summary>
+        private double PausedWorkingSeconds(DateTime from, DateTime to, DateTime now)
         {
-            bool changed = false;
-            bool previousComplete = true;
-
-            for (int i = 0; i < jobs.Count; i++)
+            double total = 0;
+            foreach (PauseSpan p in _pauses)
             {
-                var job = jobs[i];
-                if (!_timings.TryGetValue(job.Urutan, out var t))
-                {
-                    if (!previousComplete) break;   // not reached yet
-                    t = new JobTiming();
-                    _timings[job.Urutan] = t;
-                    changed = true;
-                }
-
-                if (i == 0)
-                {
-                    if (t.Start != _firstJobStart || t.Unobserved)
-                    {
-                        t.Start = _firstJobStart;
-                        t.Unobserved = false;
-                        changed = true;
-                    }
-                }
-                else if (t.Start == null && previousComplete)
-                {
-                    t.Start = now;
-                    if (job.IsComplete) t.Unobserved = true;   // it was done before we looked
-                    changed = true;
-                }
-
-                if (job.IsComplete && t.End == null && t.Start != null)
-                {
-                    t.End = now;
-                    changed = true;
-                }
-
-                previousComplete = job.IsComplete;
-                if (!previousComplete) break;   // jobs after the current one have not started
+                DateTime a = p.From > from ? p.From : from;
+                DateTime end = p.To ?? now;
+                DateTime b = end < to ? end : to;
+                if (b > a) total += WorkCalendar.WorkingSeconds(a, b);
             }
-
-            if (changed) Save();
+            return total;
         }
 
-        private int CountOf(KanbanJob job, DateTime now)
+        /// <summary>When the first job starts: the first working moment of the day, or the creation of the schedule if that was later.</summary>
+        private DateTime AnchorOf(KanbanJob first)
         {
-            if (!_timings.TryGetValue(job.Urutan, out var t) || t.Start == null) return 0;
-            if (t.Unobserved) return job.Jumlah;
+            DateTime anchor = WorkCalendar.DayStart(_date);
+            DateTime? created = first.ScheduleCreatedAt;
+            if (created != null && created.Value.Date == _date && created.Value > anchor) anchor = created.Value;
+            return WorkCalendar.NextWorking(anchor);
+        }
 
-            DateTime end = t.End ?? now;
-            if (_pausedAt != null && _pausedAt.Value < end) end = _pausedAt.Value;   // paused: the count stands still
-            double seconds = Math.Max(0, (end - t.Start.Value).TotalSeconds - t.PausedSeconds);
-            int count = (int)(seconds * job.Target / 3600.0);
-            return Math.Min(count, job.Jumlah);
+        /// <summary>The job started right after a break because the previous job ended before or at the start of it.</summary>
+        private static bool StartedAfterBreak(DateTime raw, DateTime start)
+        {
+            if (start <= raw) return false;
+            var (breakStart, breakEnd) = WorkCalendar.BreakOf(raw);
+            return raw >= breakStart && raw < breakEnd && start >= breakEnd;
         }
 
         public KanbanNumbers Calculate(IList<KanbanJob> jobs, DateTime now)
@@ -185,10 +148,65 @@ namespace LineProductionWPF
             n.AllDone = current == null;
             n.Current = current ?? jobs[jobs.Count - 1];
 
+            DateTime anchor = AnchorOf(jobs[0]);
+            DateTime plannedCursor = anchor;   // end of the previous job in the plan
+            DateTime actualCursor = anchor;    // end of the previous job in reality / expectation
+
             foreach (var job in jobs)
             {
-                job.Count = CountOf(job, now);
+                double needSeconds = job.Target > 0 ? job.Jumlah * 3600.0 / job.Target : 0;   // working time the whole job needs
+
+                // the plan: every job on time, back to back
+                DateTime plannedStart = WorkCalendar.NextWorking(plannedCursor);
+                DateTime plannedEnd = WorkCalendar.AddWorkingSeconds(plannedStart, needSeconds);
+                plannedCursor = plannedEnd;
+
+                // what really happened (finished job) or is expected (running / waiting job)
+                DateTime start = WorkCalendar.NextWorking(actualCursor);
+                DateTime end;
+                bool isCurrent = current != null && ReferenceEquals(job, current);
+                if (job.IsComplete)
+                {
+                    end = job.LastScanAt ?? start;
+                    if (end < start) end = start;
+                }
+                else if (isCurrent)
+                {
+                    double remaining = job.Target > 0 ? Math.Max(0, job.Jumlah - job.Discan) * 3600.0 / job.Target : 0;
+                    end = WorkCalendar.AddWorkingSeconds(now > start ? now : start, remaining);
+                }
+                else
+                {
+                    end = WorkCalendar.AddWorkingSeconds(start, needSeconds);
+                }
+
+                // the count (expected pieces): working time since the start, minus the pauses ("Jeda Counter")
+                DateTime countUntil = job.IsComplete ? end : isCurrent ? now : start;
+                double elapsed = WorkCalendar.WorkingSeconds(start, countUntil) - PausedWorkingSeconds(start, countUntil, now);
+                job.Count = (int)Math.Min(Math.Max(0, elapsed) * job.Target / 3600.0, job.Jumlah);
                 job.Status = job.IsComplete ? "Selesai" : ReferenceEquals(job, n.Current) ? "Berjalan" : "Menunggu";
+
+                // the times shown in the job table
+                job.Mulai = start;
+                job.Selesai = end;
+                job.PlannedEnd = plannedEnd;
+                job.IsProjected = !job.IsComplete;
+                job.DiffMinutes = (int)Math.Truncate((plannedEnd - end).TotalMinutes);   // under a minute counts as 0
+
+                // Say so when a time contains the break, so nobody reads the break as lateness.
+                string breakText = WorkCalendar.BreakText(start);
+                job.MulaiNote = StartedAfterBreak(actualCursor, start) ? "(setelah istirahat " + breakText + ")" : "";
+
+                var endNotes = new List<string>();
+                if (WorkCalendar.SpansBreak(start, end)) endNotes.Add("+istirahat " + breakText);
+                if (WorkCalendar.IsAfterShift(end)) endNotes.Add("lembur");
+                job.SelesaiNote = endNotes.Count == 0 ? "" : "(" + string.Join(", ", endNotes) + ")";
+
+                DateTime early = plannedEnd < end ? plannedEnd : end;
+                DateTime late = plannedEnd < end ? end : plannedEnd;
+                job.DiffNote = job.DiffMinutes != 0 && WorkCalendar.SpansBreak(early, late) ? "(+istirahat " + breakText + ")" : "";
+
+                actualCursor = end;
 
                 n.TargetDay += job.Jumlah;
                 n.ActualDay += job.Discan;
