@@ -208,8 +208,13 @@ namespace LineProductionWPF
             {
                 txtStatus.Text = "Menyimpan scan...";
                 string message = "";
+                int completedBoxes = 0;
+                int scansInOpenBox = 0;
+                int qtyPerBox = job.QtyPerBox;
+                int plannedQuantity = job.Jumlah;
                 bool saved = await Task.Run(() =>
-                    SchedulerDb.RecordStickerScan(date, line.Id, barcode, code, out message));
+                    SchedulerDb.RecordStickerScan(date, line.Id, barcode, code, qtyPerBox, plannedQuantity,
+                        out completedBoxes, out scansInOpenBox, out message));
 
                 if (!saved)
                 {
@@ -225,23 +230,15 @@ namespace LineProductionWPF
                 _allScanned.Add(code);
                 _scans.Add(code);
                 lstScans.ScrollIntoView(code);
-                _scansInBox++;
 
-                if (_scansInBox >= ScanPerBox)
-                {
-                    _scansInBox = 0;
-                    _boxCount++;
+                // The database is authoritative: a box holds qty_per_box individual sticker scans.
+                _scansInBox = scansInOpenBox;
+                _boxCount = completedBoxes % BoxesPerPallet;
+                _palletCount = completedBoxes / BoxesPerPallet;
+                if (scansInOpenBox == 0 && completedBoxes > 0 && completedBoxes % BoxesPerPallet == 0)
+                    ShowPalletFull();
 
-                    if (_boxCount >= BoxesPerPallet)
-                    {
-                        _palletCount++;
-                        _boxCount = 0;
-                        _scans.Clear();
-                        ShowPalletFull();
-                    }
-                }
-
-                txtStatus.Text = "Scan tersimpan: " + code;
+                txtStatus.Text = message;
                 UpdateScanCounters();
                 _lastRead = DateTime.MinValue; // refresh actual production count immediately
             }
