@@ -214,8 +214,21 @@ namespace LineProductionWPF
                     object? value = cmd.ExecuteScalar();
                     if (value == null || value == DBNull.Value)
                     {
+                        // If this serial exists on another scheduled product for the same line/date,
+                        // tell the operator that it belongs to a different job.
+                        cmd.Parameters.Clear();
+                        cmd.CommandText =
+                            "SELECT TOP (1) barcode FROM print_sticker " +
+                            "WHERE tanggal = @tanggal AND line_production_id = @lp AND serial = @serial";
+                        cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+                        cmd.Parameters.AddWithValue("@lp", lineProductionId);
+                        cmd.Parameters.AddWithValue("@serial", serial.Trim());
+                        object? otherBarcode = cmd.ExecuteScalar();
+
                         tx.Rollback();
-                        message = "Stiker tidak ditemukan. Pastikan stiker sudah dicetak untuk job ini.";
+                        message = otherBarcode != null && otherBarcode != DBNull.Value
+                            ? "PERINGATAN: Item ini bukan bagian dari job yang sedang aktif."
+                            : "PERINGATAN: Serial tidak ditemukan untuk line/tanggal ini. Periksa barcode atau cetak stikernya terlebih dahulu.";
                         return false;
                     }
                     printStickerId = Convert.ToInt64(value);
