@@ -35,6 +35,10 @@ namespace LineProductionWPF
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
         private readonly HashSet<string> _allScanned = new HashSet<string>();   // duplicate check
         private bool _pickerOpen;
+        private readonly DispatcherTimer _warningTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(3)
+        };
         private readonly DispatcherTimer _clockTimer = new DispatcherTimer();
         private readonly DispatcherTimer _holdTimer = new DispatcherTimer
         {
@@ -49,6 +53,13 @@ namespace LineProductionWPF
         {
             InitializeComponent();
             lstScans.ItemsSource = _scans;
+
+            _warningTimer.Tick += (s, e) =>
+            {
+                _warningTimer.Stop();
+                bdScanWarning.Visibility = Visibility.Collapsed;
+                txtScan.Focus();
+            };
 
             _holdTimer.Tick += (s, e) =>
             {
@@ -200,9 +211,10 @@ namespace LineProductionWPF
             if (code.Length == 0) return;
             if (_allScanned.Contains(code))
             {
-                txtStatus.Text = "PERINGATAN: Item ini sudah discan pada sesi ini.";
+                string warning = "Item ini sudah discan pada sesi ini.";
+                txtStatus.Text = "PERINGATAN: " + warning;
+                ShowScanWarning(warning, code);
                 System.Media.SystemSounds.Beep.Play();
-                txtScan.Focus();
                 return;
             }
 
@@ -226,6 +238,7 @@ namespace LineProductionWPF
                 if (!saved)
                 {
                     txtStatus.Text = message;
+                    ShowScanWarning(message, code);
                     System.Media.SystemSounds.Beep.Play();
                     return;
                 }
@@ -254,6 +267,20 @@ namespace LineProductionWPF
                 txtStatus.Text = "Gagal menyimpan scan: " + ex.Message;
                 System.Media.SystemSounds.Hand.Play();
             }
+        }
+
+        private void ShowScanWarning(string message, string serial)
+        {
+            bool unknownSerial = message.IndexOf("tidak ditemukan", StringComparison.OrdinalIgnoreCase) >= 0;
+            bdScanWarningCard.Background = new SolidColorBrush(unknownSerial
+                ? Color.FromRgb(0xB4, 0x53, 0x09)
+                : Color.FromRgb(0xB9, 0x1C, 0x1C));
+            txtScanWarningTitle.Text = unknownSerial ? "STIKER TIDAK DIKENAL" : "SCAN DITOLAK";
+            txtScanWarningMessage.Text = message.Replace("PERINGATAN: ", "");
+            txtScanWarningSerial.Text = "SERIAL: " + serial;
+            bdScanWarning.Visibility = Visibility.Visible;
+            _warningTimer.Stop();
+            _warningTimer.Start();
         }
 
         private void ShowPalletFull()
@@ -358,6 +385,7 @@ namespace LineProductionWPF
         {
             _clockTimer.Stop();
             _holdTimer.Stop();
+            _warningTimer.Stop();
             base.OnClosed(e);
         }
 
