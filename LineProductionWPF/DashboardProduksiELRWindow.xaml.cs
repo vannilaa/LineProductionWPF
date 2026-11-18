@@ -191,32 +191,65 @@ namespace LineProductionWPF
             if (code.Length > 0) ProcessScan(code);
         }
 
-        // Scanner, serial and server events should all end up here.
-        // NOTE: this only fills the box / pallet panel. The ACTUAL board shows what the database holds (sticker_scan).
-        private void ProcessScan(string code)
+        // Persist each scanned QR serial against the currently active, already-printed job.
+        private async void ProcessScan(string code)
         {
-            if (_current == null) return;           // no schedule: ignore scans
-            if (!_allScanned.Add(code)) return;     // duplicate (red flash and beep go here later)
+            if (_current == null || _line == null) return;
 
-            _scans.Add(code);
-            lstScans.ScrollIntoView(code);
-            _scansInBox++;
+            code = code.Trim();
+            if (code.Length == 0 || _allScanned.Contains(code)) return;
 
-            if (_scansInBox >= ScanPerBox)          // box full
+            var line = _line;
+            var job = _current;
+            var date = _date;
+            string barcode = job.Barcode;
+
+            try
             {
-                _scansInBox = 0;
-                _boxCount++;
+                txtStatus.Text = "Menyimpan scan...";
+                string message = "";
+                bool saved = await Task.Run(() =>
+                    SchedulerDb.RecordStickerScan(date, line.Id, barcode, code, out message));
 
-                if (_boxCount >= BoxesPerPallet)    // pallet full
+                if (!saved)
                 {
-                    _palletCount++;
-                    _boxCount = 0;
-                    _scans.Clear();                 // fresh list for the next pallet
-                    ShowPalletFull();
+                    txtStatus.Text = message;
+                    System.Media.SystemSounds.Beep.Play();
+                    return;
                 }
-            }
 
-            UpdateScanCounters();
+                // Do not update a different job's panel if the active job changed during the database call.
+                if (!ReferenceEquals(line, _line) || !ReferenceEquals(job, _current) || date != _date)
+                    return;
+
+                _allScanned.Add(code);
+                _scans.Add(code);
+                lstScans.ScrollIntoView(code);
+                _scansInBox++;
+
+                if (_scansInBox >= ScanPerBox)
+                {
+                    _scansInBox = 0;
+                    _boxCount++;
+
+                    if (_boxCount >= BoxesPerPallet)
+                    {
+                        _palletCount++;
+                        _boxCount = 0;
+                        _scans.Clear();
+                        ShowPalletFull();
+                    }
+                }
+
+                txtStatus.Text = "Scan tersimpan: " + code;
+                UpdateScanCounters();
+                _lastRead = DateTime.MinValue; // refresh actual production count immediately
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text = "Gagal menyimpan scan: " + ex.Message;
+                System.Media.SystemSounds.Hand.Play();
+            }
         }
 
         private void ShowPalletFull()
