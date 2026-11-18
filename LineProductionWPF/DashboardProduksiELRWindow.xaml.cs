@@ -197,7 +197,14 @@ namespace LineProductionWPF
             if (_current == null || _line == null) return;
 
             code = code.Trim();
-            if (code.Length == 0 || _allScanned.Contains(code)) return;
+            if (code.Length == 0) return;
+            if (_allScanned.Contains(code))
+            {
+                txtStatus.Text = "PERINGATAN: Item ini sudah discan pada sesi ini.";
+                System.Media.SystemSounds.Beep.Play();
+                txtScan.Focus();
+                return;
+            }
 
             var line = _line;
             var job = _current;
