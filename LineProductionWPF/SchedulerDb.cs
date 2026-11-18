@@ -172,5 +172,99 @@ namespace LineProductionWPF
             }
             return list;
         }
+
+        /// <summary>
+        /// Records a scan only when the exact serial belongs to a sticker printed for this date,
+        /// production line and scheduled product. A sticker can be scanned only once.
+        /// box_id is intentionally NULL; box assignment is not implemented in this dashboard yet.
+        /// </summary>
+        public static bool RecordStickerScan(DateTime tanggal, int lineProductionId, string barcode, string serial, out string message)
+        {
+            message = "";
+            if (string.IsNullOrWhiteSpace(serial))
+            {
+                message = "Kode scan kosong.";
+                return false;
+            }
+
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var tx = con.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                long printStickerId;
+                using (var cmd = con.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText =
+                        "SELECT id FROM print_sticker WITH (UPDLOCK, HOLDLOCK) " +
+                        "WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode AND serial = @serial";
+                    cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+                    cmd.Parameters.AddWithValue("@lp", lineProductionId);
+                    cmd.Parameters.AddWithValue("@barcode", barcode);
+                    cmd.Parameters.AddWithValue("@serial", serial.Trim());
+                    object? value = cmd.ExecuteScalar();
+                    if (value == null || value == DBNull.Value)
+                    {
+                        tx.Rollback();
+                        message = "Stiker tidak ditemukan. Pastikan stiker sudah dicetak untuk job ini.";
+                        return false;
+                    }
+                    printStickerId = Convert.ToInt64(value);
+                }
+
+                using (var cmd = con.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText =
+                        "SELECT " +
+                        "CASE WHEN EXISTS (SELECT 1 FROM sticker_scan WHERE print_sticker_id = @id) THEN 1 " +
+                        "     WHEN EXISTS (SELECT 1 FROM sticker_writeoff WHERE print_sticker_id = @id) THEN 2 " +
+                        "     ELSE 0 END";
+                    cmd.Parameters.AddWithValue("@id", printStickerId);
+                    int state = Convert.ToInt32(cmd.ExecuteScalar());
+                    if (state == 1)
+                    {
+                        tx.Rollback();
+                        message = "Stiker ini sudah pernah discan.";
+                        return false;
+                    }
+                    if (state == 2)
+                    {
+                        tx.Rollback();
+                        message = "Stiker ini sudah ditandai hilang/rusak dan tidak dapat discan.";
+                        return false;
+                    }
+                }
+
+                using (var cmd = con.CreateCommand())
+                {
+                    cmd.Transaction = tx;
+                    cmd.CommandText =
+                        "INSERT INTO sticker_scan (print_sticker_id, box_id, windows_user, machine_name) " +
+                        "VALUES (@id, NULL, @user, @machine)";
+                    cmd.Parameters.AddWithValue("@id", printStickerId);
+                    cmd.Parameters.AddWithValue("@user", Environment.UserName);
+                    cmd.Parameters.AddWithValue("@machine", Environment.MachineName);
+                    cmd.ExecuteNonQuery();
+                }
+
+                tx.Commit();
+                message = "Scan berhasil disimpan ke database.";
+                return true;
+            }
+            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2601 || ex.Number == 2627)
+            {
+                try { tx.Rollback(); } catch { }
+                message = "Stiker ini sudah pernah discan.";
+                return false;
+            }
+            catch
+            {
+                try { tx.Rollback(); } catch { }
+                throw;
+            }
+        }
+
     }
 }
