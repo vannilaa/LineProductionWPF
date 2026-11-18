@@ -35,10 +35,6 @@ namespace LineProductionWPF
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
         private readonly HashSet<string> _allScanned = new HashSet<string>();   // duplicate check
         private bool _pickerOpen;
-        private readonly DispatcherTimer _warningTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(3)
-        };
         private readonly DispatcherTimer _clockTimer = new DispatcherTimer();
         private readonly DispatcherTimer _holdTimer = new DispatcherTimer
         {
@@ -54,12 +50,6 @@ namespace LineProductionWPF
             InitializeComponent();
             lstScans.ItemsSource = _scans;
 
-            _warningTimer.Tick += (s, e) =>
-            {
-                _warningTimer.Stop();
-                bdScanWarning.Visibility = Visibility.Collapsed;
-                txtScan.Focus();
-            };
 
             _holdTimer.Tick += (s, e) =>
             {
@@ -213,7 +203,7 @@ namespace LineProductionWPF
             {
                 string warning = "Item ini sudah discan pada sesi ini.";
                 txtStatus.Text = "PERINGATAN: " + warning;
-                ShowScanWarning(warning, code);
+                ShowScanPopup(warning, code);
                 System.Media.SystemSounds.Beep.Play();
                 return;
             }
@@ -238,7 +228,7 @@ namespace LineProductionWPF
                 if (!saved)
                 {
                     txtStatus.Text = message;
-                    ShowScanWarning(message, code);
+                    ShowScanPopup(message, code);
                     System.Media.SystemSounds.Beep.Play();
                     return;
                 }
@@ -269,18 +259,72 @@ namespace LineProductionWPF
             }
         }
 
-        private void ShowScanWarning(string message, string serial)
+        private void ShowScanPopup(string message, string serial)
         {
             bool unknownSerial = message.IndexOf("tidak ditemukan", StringComparison.OrdinalIgnoreCase) >= 0;
-            bdScanWarningCard.Background = new SolidColorBrush(unknownSerial
-                ? Color.FromRgb(0xB4, 0x53, 0x09)
-                : Color.FromRgb(0xB9, 0x1C, 0x1C));
-            txtScanWarningTitle.Text = unknownSerial ? "STIKER TIDAK DIKENAL" : "SCAN DITOLAK";
-            txtScanWarningMessage.Text = message.Replace("PERINGATAN: ", "");
-            txtScanWarningSerial.Text = "SERIAL: " + serial;
-            bdScanWarning.Visibility = Visibility.Visible;
-            _warningTimer.Stop();
-            _warningTimer.Start();
+            var popup = new Window
+            {
+                Title = unknownSerial ? "Serial tidak dikenal" : "Scan ditolak",
+                Width = 420,
+                SizeToContent = SizeToContent.Height,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.ToolWindow,
+                ShowInTaskbar = false,
+                Topmost = true,
+                Owner = this,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Background = unknownSerial
+                    ? new SolidColorBrush(Color.FromRgb(0xFF, 0xF7, 0xED))
+                    : new SolidColorBrush(Color.FromRgb(0xFE, 0xF2, 0xF2)),
+                Content = new Border
+                {
+                    Padding = new Thickness(18),
+                    BorderThickness = new Thickness(4, 0, 0, 0),
+                    BorderBrush = unknownSerial ? Brushes.DarkOrange : Brushes.Firebrick,
+                    Child = new StackPanel
+                    {
+                        Children =
+                        {
+                            new TextBlock
+                            {
+                                Text = unknownSerial ? "SERIAL TIDAK DIKENAL" : "SCAN DITOLAK",
+                                FontSize = 20,
+                                FontWeight = FontWeights.Bold,
+                                Foreground = unknownSerial ? Brushes.DarkOrange : Brushes.Firebrick,
+                                Margin = new Thickness(0, 0, 0, 8)
+                            },
+                            new TextBlock
+                            {
+                                Text = message,
+                                FontSize = 15,
+                                TextWrapping = TextWrapping.Wrap,
+                                Foreground = Brushes.Black,
+                                Margin = new Thickness(0, 0, 0, 8)
+                            },
+                            new TextBlock
+                            {
+                                Text = "Serial: " + serial,
+                                FontSize = 14,
+                                FontWeight = FontWeights.SemiBold,
+                                FontFamily = new FontFamily("Consolas"),
+                                Foreground = Brushes.DimGray,
+                                TextWrapping = TextWrapping.Wrap
+                            }
+                        }
+                    }
+                }
+            };
+
+            popup.Show();
+            var closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
+            closeTimer.Tick += (s, e) =>
+            {
+                closeTimer.Stop();
+                popup.Close();
+            };
+            popup.Closed += (s, e) => closeTimer.Stop();
+            closeTimer.Start();
+            txtScan.Focus();
         }
 
         private void ShowPalletFull()
@@ -385,7 +429,6 @@ namespace LineProductionWPF
         {
             _clockTimer.Stop();
             _holdTimer.Stop();
-            _warningTimer.Stop();
             base.OnClosed(e);
         }
 
