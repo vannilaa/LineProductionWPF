@@ -445,8 +445,9 @@ namespace LineProductionWPF
 
         private void UpdateClock()
         {
-            txtClock.Text = DateTime.Now.ToString(
-                "dd MMMM yyyy HH:mm:ss", CultureInfo.InvariantCulture);
+            DateTime now = DateTime.Now;
+            txtClockDate.Text = now.ToString("dd MMMM yyyy", CultureInfo.InvariantCulture);
+            txtClockTime.Text = now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
         }
 
         // ---------- keep the cursor in the scan box ----------
