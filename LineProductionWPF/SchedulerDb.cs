@@ -56,7 +56,7 @@ namespace LineProductionWPF
         public string MulaiNote { get; set; } = "";         // e.g. "(setelah istirahat 12-13)"
         public string SelesaiNote { get; set; } = "";       // e.g. "(+istirahat 12-13)" or "(lembur)"
         public string DiffNote { get; set; } = "";
-        public int DiffMinutes { get; set; }                // PlannedEnd - Selesai in minutes: negative = late, positive = ahead
+        public int DiffMinutes { get; set; }                // PlannedEnd - Selesai in WORKING minutes (no break): negative = late, positive = ahead
 
         public string MulaiText => Mulai.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
         public string SelesaiText => Selesai.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);

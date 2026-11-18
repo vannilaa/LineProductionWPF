@@ -31,8 +31,8 @@ namespace LineProductionWPF
     ///  - Count = working seconds since the job started x pcs per hour / 3600, never above Jumlah, frozen when the job
     ///    completes. "Jeda Counter" takes the paused time out of the count (the Count board only, not the job times).
     ///  - Job times: finished = real start / end. Running = expected end from the pieces still to scan at the planned rate.
-    ///    Waiting = starts when the previous job is expected to end. Selisih Waktu = planned end - expected end
-    ///    (negative = late), where the plan has every job on time, back to back.
+    ///    Waiting = starts when the previous job is expected to end. Selisih Waktu = planned end - expected end in
+    ///    WORKING minutes (the break is not lateness; negative = late), where the plan has every job on time, back to back.
     ///  - Day numbers add up every job; the job numbers restart when the next job becomes current.
     /// Nothing about the jobs is kept on this PC: they all come from the database, so every station shows the same times.
     /// Only the pauses are kept (kanban_pauses.json), because a pause is only a way to pace the workers on this station.
@@ -191,9 +191,13 @@ namespace LineProductionWPF
                 job.Selesai = end;
                 job.PlannedEnd = plannedEnd;
                 job.IsProjected = !job.IsComplete;
-                job.DiffMinutes = (int)Math.Truncate((plannedEnd - end).TotalMinutes);   // under a minute counts as 0
+                // Selisih Waktu is counted in WORKING minutes: the break between the two ends is not lateness.
+                double diffSeconds = end >= plannedEnd
+                    ? -WorkCalendar.WorkSecondsWithOvertime(plannedEnd, end)
+                    : WorkCalendar.WorkSecondsWithOvertime(end, plannedEnd);
+                job.DiffMinutes = (int)Math.Truncate(diffSeconds / 60.0);   // under a minute counts as 0
 
-                // Say so when a time contains the break, so nobody reads the break as lateness.
+                // Say so when a time contains the break (the times are clock times; Selisih Waktu leaves the break out).
                 string breakText = WorkCalendar.BreakText(start);
                 job.MulaiNote = StartedAfterBreak(actualCursor, start) ? "(setelah istirahat " + breakText + ")" : "";
 
@@ -204,7 +208,7 @@ namespace LineProductionWPF
 
                 DateTime early = plannedEnd < end ? plannedEnd : end;
                 DateTime late = plannedEnd < end ? end : plannedEnd;
-                job.DiffNote = job.DiffMinutes != 0 && WorkCalendar.SpansBreak(early, late) ? "(+istirahat " + breakText + ")" : "";
+                job.DiffNote = job.DiffMinutes != 0 && WorkCalendar.SpansBreak(early, late) ? "(tidak termasuk istirahat " + breakText + ")" : "";
 
                 actualCursor = end;
 

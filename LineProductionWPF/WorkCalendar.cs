@@ -93,6 +93,22 @@ namespace LineProductionWPF
         }
 
         /// <summary>
+        /// Working time between from and to, with overtime (after the last block) counted as work too. This is the exact
+        /// opposite of <see cref="AddWorkingSeconds"/>, and what the Selisih Waktu column is measured in: the break is never
+        /// part of it, so a job that is "60 minutes late" is 60 minutes late whether or not the break lies in between.
+        /// </summary>
+        public static double WorkSecondsWithOvertime(DateTime from, DateTime to)
+        {
+            if (to <= from) return 0;
+
+            double total = WorkingSeconds(from, to);
+            DateTime overtimeStart = DayEnd(from);
+            if (from > overtimeStart) overtimeStart = from;
+            if (to > overtimeStart) total += (to - overtimeStart).TotalSeconds;
+            return total;
+        }
+
+        /// <summary>
         /// The moment when <paramref name="seconds"/> of working time have passed, counted from <paramref name="from"/>.
         /// A start inside the break (or before the shift) first moves to the next working moment. With 0 seconds this
         /// simply returns that next working moment. Past the end of the last block the rest is added as plain clock time (overtime).
