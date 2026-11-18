@@ -28,12 +28,37 @@ namespace LineProductionWPF
         public int Discan { get; set; }          // scanned on the line so far
         public int QtyPerBox { get; set; }       // pieces that make one box (product.qty_per_box), 0 = unknown
         public int BoxesRequired { get; set; }   // boxes needed for this job's planned quantity
+        public int CompletedBoxes { get; set; }  // boxes already closed in the database
+        public int OpenBoxScans { get; set; }    // scans in the box that is still open
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
         // shown in the job table
         public int Count { get; set; }
         public string Status { get; set; } = "";
+    }
+
+    public enum ScanOutcome
+    {
+        Saved,
+        InvalidInput,     // empty code, qty per box or planned quantity missing
+        NotFound,         // serial is not a printed sticker for this line/date
+        WrongJob,         // serial belongs to another product of this line/date
+        AlreadyScanned,
+        WrittenOff,
+        JobFull,
+        Busy,             // lock timeout / deadlock: the operator should scan again
+        Error             // unexpected failure (set by the caller)
+    }
+
+    /// <summary>Result of <see cref="SchedulerDb.RecordStickerScan"/>.</summary>
+    public sealed class ScanResult
+    {
+        public ScanOutcome Outcome { get; init; }
+        public string Message { get; init; } = "";
+        public int CompletedBoxes { get; init; }    // closed boxes of the job after this scan
+        public int ScansInOpenBox { get; init; }    // scans in the still-open box (0 right after a box closed)
+        public bool Saved => Outcome == ScanOutcome.Saved;
     }
 
     /// <summary>
@@ -141,7 +166,11 @@ namespace LineProductionWPF
                 "SELECT i.urutan, i.barcode, i.jumlah, " +
                 "       COALESCE(p.part_number_code, p.part_number), p.job_no, p.position, p.target_per_jam, " +
                 "       ISNULL(v.discan, 0), ISNULL(p.qty_per_box, 0), p.part, " +
-                "       CASE WHEN i.jumlah > 0 THEN ((i.jumlah - 1) / CASE WHEN p.qty_per_box > 0 THEN p.qty_per_box ELSE 1 END) + 1 ELSE 0 END " +
+                "       CASE WHEN i.jumlah > 0 THEN ((i.jumlah - 1) / CASE WHEN p.qty_per_box > 0 THEN p.qty_per_box ELSE 1 END) + 1 ELSE 0 END, " +
+                "       (SELECT COUNT(*) FROM dbo.box b WHERE b.tanggal = s.tanggal AND b.line_production_id = s.line_production_id " +
+                "          AND b.barcode = i.barcode AND b.closed_at IS NOT NULL), " +
+                "       (SELECT COUNT(*) FROM sticker_scan c JOIN dbo.box b ON b.id = c.box_id WHERE b.tanggal = s.tanggal " +
+                "          AND b.line_production_id = s.line_production_id AND b.barcode = i.barcode AND b.closed_at IS NULL) " +
                 "FROM schedule s " +
                 "JOIN schedule_item i ON i.schedule_id = s.id " +
                 "LEFT JOIN product p ON p.barcode = i.barcode " +
@@ -167,133 +196,138 @@ namespace LineProductionWPF
                     Discan = r.GetInt32(7),
                     QtyPerBox = r.GetInt32(8),
                     Part = r.IsDBNull(9) ? "" : r.GetString(9),
-                    BoxesRequired = r.GetInt32(10)
+                    BoxesRequired = r.GetInt32(10),
+                    CompletedBoxes = r.GetInt32(11),
+                    OpenBoxScans = r.GetInt32(12)
                 });
             }
             return list;
         }
 
+        private static SqlCommand Command(SqlConnection con, SqlTransaction tx, string sql)
+        {
+            var cmd = con.CreateCommand();
+            cmd.Transaction = tx;
+            cmd.CommandText = sql;
+            return cmd;
+        }
+
+        private static void AddJobParameters(SqlCommand cmd, DateTime tanggal, int lineProductionId, string barcode)
+        {
+            cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
+            cmd.Parameters.AddWithValue("@barcode", barcode);
+        }
+
+        private static ScanResult Reject(ScanOutcome outcome, string message) =>
+            new ScanResult { Outcome = outcome, Message = message };
+
         /// <summary>
         /// Records a scan only when the exact serial belongs to a sticker printed for this date,
         /// production line and scheduled product. A sticker can be scanned only once.
-        /// box_id is intentionally NULL; box assignment is not implemented in this dashboard yet.
+        /// The scan is assigned to the open box of the job (a new box is opened when needed); a box is closed
+        /// when it holds qtyPerBox scans, or when the job reaches its planned quantity (then it is marked partial).
+        /// All scans of one job are serialised with an application lock, so several scan stations can work on the
+        /// same job without deadlocks or two stations opening the same box number.
         /// </summary>
-        public static bool RecordStickerScan(DateTime tanggal, int lineProductionId, string barcode, string serial,
-            int qtyPerBox, int plannedQuantity, out int completedBoxes, out int scansInOpenBox, out string message)
+        public static ScanResult RecordStickerScan(DateTime tanggal, int lineProductionId, string barcode, string serial,
+            int qtyPerBox, int plannedQuantity)
         {
-            completedBoxes = 0;
-            scansInOpenBox = 0;
-            message = "";
-            if (string.IsNullOrWhiteSpace(serial))
-            {
-                message = "Kode scan kosong.";
-                return false;
-            }
-            if (qtyPerBox <= 0 || plannedQuantity <= 0)
-            {
-                message = "Qty per box atau jumlah job belum valid.";
-                return false;
-            }
+            serial = (serial ?? "").Trim();
+            barcode = (barcode ?? "").Trim();
+            if (serial.Length == 0)
+                return Reject(ScanOutcome.InvalidInput, "Kode scan kosong.");
+            if (qtyPerBox <= 0)
+                return Reject(ScanOutcome.InvalidInput, "Qty per box produk ini belum diatur. Scan tidak disimpan.");
+            if (plannedQuantity <= 0)
+                return Reject(ScanOutcome.InvalidInput, "Jumlah job belum valid. Scan tidak disimpan.");
 
             using var con = new SqlConnection(ConnectionString);
             con.Open();
-            using var tx = con.BeginTransaction(System.Data.IsolationLevel.Serializable);
+            // No explicit Rollback needed on early returns: disposing an uncommitted transaction rolls it back.
+            using var tx = con.BeginTransaction();
             try
             {
-                long printStickerId;
-                using (var cmd = con.CreateCommand())
+                // 1. One scan at a time per job (date + line + product).
+                using (var cmd = Command(con, tx,
+                    "DECLARE @r INT; " +
+                    "EXEC @r = sp_getapplock @Resource = @res, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 5000; " +
+                    "SELECT @r;"))
                 {
-                    cmd.Transaction = tx;
-                    cmd.CommandText =
-                        "SELECT id FROM print_sticker WITH (UPDLOCK, HOLDLOCK) " +
-                        "WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode AND serial = @serial";
-                    cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
-                    cmd.Parameters.AddWithValue("@lp", lineProductionId);
-                    cmd.Parameters.AddWithValue("@barcode", barcode);
-                    cmd.Parameters.AddWithValue("@serial", serial.Trim());
+                    cmd.Parameters.AddWithValue("@res", "scan:" + tanggal.ToString("yyyyMMdd") + ":" + lineProductionId + ":" + barcode);
+                    if (Convert.ToInt32(cmd.ExecuteScalar()) < 0)
+                        return Reject(ScanOutcome.Busy, "Sistem sedang sibuk. Scan ulang item ini.");
+                }
+
+                // 2. The serial must belong to a sticker printed for this exact job.
+                long printStickerId;
+                using (var cmd = Command(con, tx,
+                    "SELECT id FROM print_sticker " +
+                    "WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode AND serial = @serial"))
+                {
+                    AddJobParameters(cmd, tanggal, lineProductionId, barcode);
+                    cmd.Parameters.AddWithValue("@serial", serial);
                     object? value = cmd.ExecuteScalar();
                     if (value == null || value == DBNull.Value)
                     {
-                        // If this serial exists on another scheduled product for the same line/date,
-                        // tell the operator that it belongs to a different job.
+                        // Same serial on another product of this line/date: the operator picked the wrong job.
                         cmd.Parameters.Clear();
                         cmd.CommandText =
-                            "SELECT TOP (1) barcode FROM print_sticker " +
+                            "SELECT TOP (1) 1 FROM print_sticker " +
                             "WHERE tanggal = @tanggal AND line_production_id = @lp AND serial = @serial";
                         cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
                         cmd.Parameters.AddWithValue("@lp", lineProductionId);
-                        cmd.Parameters.AddWithValue("@serial", serial.Trim());
-                        object? otherBarcode = cmd.ExecuteScalar();
-
-                        tx.Rollback();
-                        message = otherBarcode != null && otherBarcode != DBNull.Value
-                            ? "PERINGATAN: Item ini bukan bagian dari job yang sedang aktif."
-                            : "PERINGATAN: Serial tidak ditemukan untuk line/tanggal ini. Periksa barcode atau cetak stikernya terlebih dahulu.";
-                        return false;
+                        cmd.Parameters.AddWithValue("@serial", serial);
+                        object? other = cmd.ExecuteScalar();
+                        return other != null && other != DBNull.Value
+                            ? Reject(ScanOutcome.WrongJob, "PERINGATAN: Item ini bukan bagian dari job yang sedang aktif.")
+                            : Reject(ScanOutcome.NotFound, "PERINGATAN: Serial tidak ditemukan untuk line/tanggal ini. Periksa barcode atau cetak stikernya terlebih dahulu.");
                     }
                     printStickerId = Convert.ToInt64(value);
                 }
 
-                using (var cmd = con.CreateCommand())
+                // 3. Not scanned before, and not written off.
+                using (var cmd = Command(con, tx,
+                    "SELECT CASE " +
+                    "WHEN EXISTS (SELECT 1 FROM sticker_scan WHERE print_sticker_id = @id) THEN 1 " +
+                    "WHEN EXISTS (SELECT 1 FROM sticker_writeoff WHERE print_sticker_id = @id) THEN 2 ELSE 0 END"))
                 {
-                    cmd.Transaction = tx;
-                    cmd.CommandText =
-                        "SELECT CASE " +
-                        "WHEN EXISTS (SELECT 1 FROM sticker_scan WHERE print_sticker_id = @id) THEN 1 " +
-                        "WHEN EXISTS (SELECT 1 FROM sticker_writeoff WHERE print_sticker_id = @id) THEN 2 ELSE 0 END";
                     cmd.Parameters.AddWithValue("@id", printStickerId);
                     int state = Convert.ToInt32(cmd.ExecuteScalar());
-                    if (state != 0)
-                    {
-                        tx.Rollback();
-                        message = state == 1 ? "Stiker ini sudah pernah discan." :
-                            "Stiker ini sudah ditandai hilang/rusak dan tidak dapat discan.";
-                        return false;
-                    }
+                    if (state == 1) return Reject(ScanOutcome.AlreadyScanned, "Stiker ini sudah pernah discan.");
+                    if (state == 2) return Reject(ScanOutcome.WrittenOff, "Stiker ini sudah ditandai hilang/rusak dan tidak dapat discan.");
                 }
 
+                // 4. The job must not already be full.
                 int totalBefore;
-                using (var cmd = con.CreateCommand())
+                using (var cmd = Command(con, tx,
+                    "SELECT COUNT(*) FROM sticker_scan c JOIN print_sticker s ON s.id = c.print_sticker_id " +
+                    "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp AND s.barcode = @barcode"))
                 {
-                    cmd.Transaction = tx;
-                    cmd.CommandText =
-                        "SELECT COUNT(*) FROM sticker_scan c JOIN print_sticker s ON s.id = c.print_sticker_id " +
-                        "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp AND s.barcode = @barcode";
-                    cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
-                    cmd.Parameters.AddWithValue("@lp", lineProductionId);
-                    cmd.Parameters.AddWithValue("@barcode", barcode);
+                    AddJobParameters(cmd, tanggal, lineProductionId, barcode);
                     totalBefore = Convert.ToInt32(cmd.ExecuteScalar());
                 }
                 if (totalBefore >= plannedQuantity)
-                {
-                    tx.Rollback();
-                    message = "Jumlah scan untuk job ini sudah mencapai jumlah rencana.";
-                    return false;
-                }
+                    return Reject(ScanOutcome.JobFull, "Jumlah scan untuk job ini sudah mencapai jumlah rencana.");
 
+                // 5. The open box of this job, or a new one.
                 int boxId;
-                using (var cmd = con.CreateCommand())
+                using (var cmd = Command(con, tx,
+                    "SELECT TOP (1) id FROM dbo.box " +
+                    "WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode AND closed_at IS NULL " +
+                    "ORDER BY box_no DESC"))
                 {
-                    cmd.Transaction = tx;
-                    cmd.CommandText =
-                        "SELECT TOP (1) id FROM dbo.box WITH (UPDLOCK, HOLDLOCK) " +
-                        "WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode AND closed_at IS NULL " +
-                        "ORDER BY box_no DESC";
-                    cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
-                    cmd.Parameters.AddWithValue("@lp", lineProductionId);
-                    cmd.Parameters.AddWithValue("@barcode", barcode);
+                    AddJobParameters(cmd, tanggal, lineProductionId, barcode);
                     object? value = cmd.ExecuteScalar();
                     if (value == null || value == DBNull.Value)
                     {
                         cmd.Parameters.Clear();
                         cmd.CommandText =
-                            "DECLARE @next INT = ISNULL((SELECT MAX(box_no) FROM dbo.box WITH (UPDLOCK, HOLDLOCK) " +
-                            "WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode), 0) + 1; " +
                             "INSERT INTO dbo.box (tanggal, line_production_id, barcode, box_no, qty_per_box, windows_user, machine_name) " +
-                            "OUTPUT INSERTED.id VALUES (@tanggal, @lp, @barcode, @next, @qty, @user, @machine)";
-                        cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
-                        cmd.Parameters.AddWithValue("@lp", lineProductionId);
-                        cmd.Parameters.AddWithValue("@barcode", barcode);
+                            "OUTPUT INSERTED.id " +
+                            "SELECT @tanggal, @lp, @barcode, ISNULL(MAX(box_no), 0) + 1, @qty, @user, @machine " +
+                            "FROM dbo.box WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode";
+                        AddJobParameters(cmd, tanggal, lineProductionId, barcode);
                         cmd.Parameters.AddWithValue("@qty", qtyPerBox);
                         cmd.Parameters.AddWithValue("@user", Environment.UserName);
                         cmd.Parameters.AddWithValue("@machine", Environment.MachineName);
@@ -302,12 +336,11 @@ namespace LineProductionWPF
                     else boxId = Convert.ToInt32(value);
                 }
 
-                using (var cmd = con.CreateCommand())
+                // 6. Save the scan.
+                using (var cmd = Command(con, tx,
+                    "INSERT INTO sticker_scan (print_sticker_id, box_id, windows_user, machine_name) " +
+                    "VALUES (@id, @box, @user, @machine)"))
                 {
-                    cmd.Transaction = tx;
-                    cmd.CommandText =
-                        "INSERT INTO sticker_scan (print_sticker_id, box_id, windows_user, machine_name) " +
-                        "VALUES (@id, @box, @user, @machine)";
                     cmd.Parameters.AddWithValue("@id", printStickerId);
                     cmd.Parameters.AddWithValue("@box", boxId);
                     cmd.Parameters.AddWithValue("@user", Environment.UserName);
@@ -315,61 +348,55 @@ namespace LineProductionWPF
                     cmd.ExecuteNonQuery();
                 }
 
+                // 7. Close the box when it is full, or when this was the last piece of the job (partial box).
                 int scansInBox;
-                using (var cmd = con.CreateCommand())
+                using (var cmd = Command(con, tx, "SELECT COUNT(*) FROM sticker_scan WHERE box_id = @box"))
                 {
-                    cmd.Transaction = tx;
-                    cmd.CommandText = "SELECT COUNT(*) FROM sticker_scan WHERE box_id = @box";
                     cmd.Parameters.AddWithValue("@box", boxId);
                     scansInBox = Convert.ToInt32(cmd.ExecuteScalar());
                 }
 
-                int totalAfter = totalBefore + 1;
-                bool jobComplete = totalAfter >= plannedQuantity;
-                if (scansInBox >= qtyPerBox || jobComplete)
+                bool jobComplete = totalBefore + 1 >= plannedQuantity;
+                bool closeBox = scansInBox >= qtyPerBox || jobComplete;
+                if (closeBox)
                 {
-                    using (var cmd = con.CreateCommand())
-                    {
-                        cmd.Transaction = tx;
-                        cmd.CommandText =
-                            "UPDATE dbo.box SET closed_at = SYSDATETIME(), is_partial = @partial WHERE id = @box";
-                        cmd.Parameters.AddWithValue("@partial", scansInBox < qtyPerBox);
-                        cmd.Parameters.AddWithValue("@box", boxId);
-                        cmd.ExecuteNonQuery();
-                    }
-                    scansInOpenBox = 0;
+                    using var cmd = Command(con, tx,
+                        "UPDATE dbo.box SET closed_at = SYSDATETIME(), is_partial = @partial WHERE id = @box");
+                    cmd.Parameters.AddWithValue("@partial", scansInBox < qtyPerBox);
+                    cmd.Parameters.AddWithValue("@box", boxId);
+                    cmd.ExecuteNonQuery();
                 }
-                else scansInOpenBox = scansInBox;
 
-                using (var cmd = con.CreateCommand())
+                int completedBoxes;
+                using (var cmd = Command(con, tx,
+                    "SELECT COUNT(*) FROM dbo.box WHERE tanggal = @tanggal AND line_production_id = @lp " +
+                    "AND barcode = @barcode AND closed_at IS NOT NULL"))
                 {
-                    cmd.Transaction = tx;
-                    cmd.CommandText =
-                        "SELECT COUNT(*) FROM dbo.box WHERE tanggal = @tanggal AND line_production_id = @lp " +
-                        "AND barcode = @barcode AND closed_at IS NOT NULL";
-                    cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
-                    cmd.Parameters.AddWithValue("@lp", lineProductionId);
-                    cmd.Parameters.AddWithValue("@barcode", barcode);
+                    AddJobParameters(cmd, tanggal, lineProductionId, barcode);
                     completedBoxes = Convert.ToInt32(cmd.ExecuteScalar());
                 }
 
                 tx.Commit();
-                message = "Scan tersimpan. Box " + (completedBoxes + (scansInOpenBox > 0 ? 1 : 0)) +
-                    ": " + (scansInOpenBox > 0 ? scansInOpenBox : scansInBox) + "/" + qtyPerBox + ".";
-                return true;
+
+                int scansInOpenBox = closeBox ? 0 : scansInBox;
+                int boxNumber = closeBox ? completedBoxes : completedBoxes + 1;
+                return new ScanResult
+                {
+                    Outcome = ScanOutcome.Saved,
+                    Message = "Scan tersimpan. Box " + boxNumber + ": " + scansInBox + "/" + qtyPerBox + ".",
+                    CompletedBoxes = completedBoxes,
+                    ScansInOpenBox = scansInOpenBox
+                };
             }
-            catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 2601 || ex.Number == 2627)
+            catch (SqlException ex) when (ex.Number == 2601 || ex.Number == 2627)
             {
-                try { tx.Rollback(); } catch { }
-                message = "Stiker ini sudah pernah discan.";
-                return false;
+                // unique index on sticker_scan(print_sticker_id): another station scanned it first
+                return Reject(ScanOutcome.AlreadyScanned, "Stiker ini sudah pernah discan.");
             }
-            catch
+            catch (SqlException ex) when (ex.Number == 1205)
             {
-                try { tx.Rollback(); } catch { }
-                throw;
+                return Reject(ScanOutcome.Busy, "Sistem sedang sibuk. Scan ulang item ini.");
             }
         }
-
     }
 }

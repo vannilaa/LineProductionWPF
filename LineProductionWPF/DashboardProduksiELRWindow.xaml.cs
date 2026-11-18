@@ -33,8 +33,17 @@ namespace LineProductionWPF
 
         // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
-        private readonly HashSet<string> _allScanned = new HashSet<string>();   // duplicate check
+        private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
         private bool _pickerOpen;
+
+        // Scans are saved one at a time, in the order they were scanned, each for the job that was active when scanned.
+        private sealed record PendingScan(KanbanLine Line, KanbanJob Job, DateTime Date, string Code);
+        private readonly Queue<PendingScan> _scanQueue = new Queue<PendingScan>();
+        private bool _scanBusy;
+        private int _scanVersion;          // +1 per saved scan: tells whether a database read is older than a scan
+        private bool _syncBoxProgress;     // next Render() takes the box progress from the (fresh) database read
+        private Window? _scanPopup;
+        private readonly DispatcherTimer _popupTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
         private readonly DispatcherTimer _clockTimer = new DispatcherTimer();
         private readonly DispatcherTimer _holdTimer = new DispatcherTimer
         {
@@ -50,6 +59,7 @@ namespace LineProductionWPF
             InitializeComponent();
             lstScans.ItemsSource = _scans;
 
+            _popupTimer.Tick += (s, e) => CloseScanPopup();
 
             _holdTimer.Tick += (s, e) =>
             {
@@ -119,12 +129,16 @@ namespace LineProductionWPF
                 _lastRead = DateTime.Now;
                 var line = _line;
                 var date = _date;
+                int versionBefore = _scanVersion;
                 try
                 {
                     var jobs = await Task.Run(() => SchedulerDb.LoadJobs(date, line.Id));
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
+                        // Take box progress from this read only if no scan was saved or is waiting meanwhile,
+                        // otherwise the read is older than the panel.
+                        _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;
                         _tracker.Update(_jobs, DateTime.Now);
                         txtStatus.Text = jobs.Count == 0
                             ? "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
@@ -153,6 +167,15 @@ namespace LineProductionWPF
             if (!ReferenceEquals(n.Current, _current) && (n.Current == null || _current == null || n.Current.Urutan != _current.Urutan))
                 ResetScanPanel();
             _current = n.Current;
+
+            // After a restart or a job change the panel shows what the database holds (also scans from other stations).
+            if (_syncBoxProgress && _current != null)
+            {
+                _scansInBox = _current.OpenBoxScans;
+                _boxCount = _current.CompletedBoxes % BoxesPerPallet;
+                _palletCount = _current.CompletedBoxes / BoxesPerPallet;
+            }
+            _syncBoxProgress = false;
 
             PartNomor.Text = _current?.PartNumber ?? "-";
             JobNo.Text = _current == null ? "-" : _current.JobNo;
@@ -192,76 +215,99 @@ namespace LineProductionWPF
             if (code.Length > 0) ProcessScan(code);
         }
 
-        // Persist each scanned QR serial against the currently active, already-printed job.
-        private async void ProcessScan(string code)
+        // Every scanned QR serial is saved against the job that was active when it was scanned.
+        // Scans are queued so they are saved in order and the panel never shows an older result after a newer one.
+        private void ProcessScan(string code)
         {
-            if (_current == null || _line == null) return;
-
             code = code.Trim();
-            if (code.Length == 0) return;
-            if (_allScanned.Contains(code))
+            if (code.Length == 0 || _current == null || _line == null) return;
+
+            _scanQueue.Enqueue(new PendingScan(_line, _current, _date, code));
+            if (!_scanBusy) _ = DrainScanQueue();
+        }
+
+        private async Task DrainScanQueue()
+        {
+            _scanBusy = true;
+            try
             {
-                string warning = "Item ini sudah discan pada sesi ini.";
+                while (_scanQueue.Count > 0)
+                    await SaveScan(_scanQueue.Dequeue());
+            }
+            finally
+            {
+                _scanBusy = false;
+            }
+        }
+
+        // The jobs list is replaced by every database read, so the job is matched by value, not by reference.
+        private bool IsActive(PendingScan p) =>
+            ReferenceEquals(p.Line, _line) && p.Date == _date && _current != null &&
+            _current.Urutan == p.Job.Urutan && _current.Barcode == p.Job.Barcode;
+
+        private async Task SaveScan(PendingScan p)
+        {
+            if (IsActive(p) && _allScanned.Contains(p.Code))
+            {
+                const string warning = "Item ini sudah discan pada sesi ini.";
                 txtStatus.Text = "PERINGATAN: " + warning;
-                ShowScanPopup(warning, code);
+                ShowScanPopup(warning, p.Code, ScanOutcome.AlreadyScanned);
                 System.Media.SystemSounds.Beep.Play();
                 return;
             }
 
-            var line = _line;
-            var job = _current;
-            var date = _date;
-            string barcode = job.Barcode;
-
             try
             {
                 txtStatus.Text = "Menyimpan scan...";
-                string message = "";
-                int completedBoxes = 0;
-                int scansInOpenBox = 0;
-                int qtyPerBox = job.QtyPerBox > 0 ? job.QtyPerBox : 1;
-                int plannedQuantity = job.Jumlah;
-                bool saved = await Task.Run(() =>
-                    SchedulerDb.RecordStickerScan(date, line.Id, barcode, code, qtyPerBox, plannedQuantity,
-                        out completedBoxes, out scansInOpenBox, out message));
+                ScanResult result = await Task.Run(() =>
+                    SchedulerDb.RecordStickerScan(p.Date, p.Line.Id, p.Job.Barcode, p.Code, p.Job.QtyPerBox, p.Job.Jumlah));
 
-                if (!saved)
+                if (!result.Saved)
                 {
-                    txtStatus.Text = message;
-                    ShowScanPopup(message, code);
+                    txtStatus.Text = result.Message;
+                    ShowScanPopup(result.Message, p.Code, result.Outcome);
                     System.Media.SystemSounds.Beep.Play();
                     return;
                 }
 
-                // Do not update a different job's panel if the active job changed during the database call.
-                if (!ReferenceEquals(line, _line) || !ReferenceEquals(job, _current) || date != _date)
-                    return;
+                _scanVersion++;
+                _lastRead = DateTime.MinValue;   // refresh the actual production count right away
 
-                _allScanned.Add(code);
-                _scans.Add(code);
-                lstScans.ScrollIntoView(code);
+                // The job may have changed during the database call: the scan is saved, but this panel is another job's.
+                if (!IsActive(p)) return;
+
+                _allScanned.Add(p.Code);
+                _scans.Add(p.Code);
+                lstScans.ScrollIntoView(p.Code);
 
                 // The database is authoritative: a box holds qty_per_box individual sticker scans.
-                _scansInBox = scansInOpenBox;
-                _boxCount = completedBoxes % BoxesPerPallet;
-                _palletCount = completedBoxes / BoxesPerPallet;
-                if (scansInOpenBox == 0 && completedBoxes > 0 && completedBoxes % BoxesPerPallet == 0)
+                _scansInBox = result.ScansInOpenBox;
+                _boxCount = result.CompletedBoxes % BoxesPerPallet;
+                _palletCount = result.CompletedBoxes / BoxesPerPallet;
+                if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && result.CompletedBoxes % BoxesPerPallet == 0)
                     ShowPalletFull();
 
-                txtStatus.Text = message;
+                txtStatus.Text = result.Message;
                 UpdateScanCounters();
-                _lastRead = DateTime.MinValue; // refresh actual production count immediately
             }
             catch (Exception ex)
             {
-                txtStatus.Text = "Gagal menyimpan scan: " + ex.Message;
+                // Nothing was saved: tell the operator to scan this item again.
+                string message = "Gagal menyimpan scan, scan ulang item ini. (" + ex.Message + ")";
+                txtStatus.Text = message;
+                ShowScanPopup(message, p.Code, ScanOutcome.Error);
                 System.Media.SystemSounds.Hand.Play();
             }
         }
 
-        private void ShowScanPopup(string message, string serial)
+        // One small warning window at a time. It must not take the keyboard focus, or the scanner's next
+        // characters would go to the popup instead of the scan box and be lost.
+        private void ShowScanPopup(string message, string serial, ScanOutcome outcome)
         {
-            bool unknownSerial = message.IndexOf("tidak ditemukan", StringComparison.OrdinalIgnoreCase) >= 0;
+            CloseScanPopup();
+
+            bool unknownSerial = outcome == ScanOutcome.NotFound;
+            Brush accent = unknownSerial ? Brushes.DarkOrange : Brushes.Firebrick;
             var popup = new Window
             {
                 Title = unknownSerial ? "Serial tidak dikenal" : "Scan ditolak",
@@ -270,6 +316,7 @@ namespace LineProductionWPF
                 ResizeMode = ResizeMode.NoResize,
                 WindowStyle = WindowStyle.ToolWindow,
                 ShowInTaskbar = false,
+                ShowActivated = false,
                 Topmost = true,
                 Owner = this,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
@@ -280,7 +327,7 @@ namespace LineProductionWPF
                 {
                     Padding = new Thickness(18),
                     BorderThickness = new Thickness(4, 0, 0, 0),
-                    BorderBrush = unknownSerial ? Brushes.DarkOrange : Brushes.Firebrick,
+                    BorderBrush = accent,
                     Child = new StackPanel
                     {
                         Children =
@@ -290,7 +337,7 @@ namespace LineProductionWPF
                                 Text = unknownSerial ? "SERIAL TIDAK DIKENAL" : "SCAN DITOLAK",
                                 FontSize = 20,
                                 FontWeight = FontWeights.Bold,
-                                Foreground = unknownSerial ? Brushes.DarkOrange : Brushes.Firebrick,
+                                Foreground = accent,
                                 Margin = new Thickness(0, 0, 0, 8)
                             },
                             new TextBlock
@@ -315,16 +362,18 @@ namespace LineProductionWPF
                 }
             };
 
+            _scanPopup = popup;
             popup.Show();
-            var closeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2.5) };
-            closeTimer.Tick += (s, e) =>
-            {
-                closeTimer.Stop();
-                popup.Close();
-            };
-            popup.Closed += (s, e) => closeTimer.Stop();
-            closeTimer.Start();
-            txtScan.Focus();
+            _popupTimer.Stop();
+            _popupTimer.Start();   // restarts the 2.5 second wait
+        }
+
+        private void CloseScanPopup()
+        {
+            _popupTimer.Stop();
+            Window? popup = _scanPopup;
+            _scanPopup = null;
+            popup?.Close();
         }
 
         private void ShowPalletFull()
@@ -429,6 +478,7 @@ namespace LineProductionWPF
         {
             _clockTimer.Stop();
             _holdTimer.Stop();
+            CloseScanPopup();
             base.OnClosed(e);
         }
 
