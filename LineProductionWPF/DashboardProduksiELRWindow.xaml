@@ -295,28 +295,6 @@
             </TabControl>
         </Grid>
 
-        <!-- Large, high-contrast scan rejection overlay -->
-        <Border x:Name="bdScanWarning" Grid.RowSpan="4" Panel.ZIndex="100"
-                Visibility="Collapsed" Background="#B3000000" Padding="30"
-                IsHitTestVisible="False">
-            <Border x:Name="bdScanWarningCard" Background="#B91C1C"
-                    BorderBrush="White" BorderThickness="4" CornerRadius="18"
-                    Padding="36" HorizontalAlignment="Center" VerticalAlignment="Center"
-                    MaxWidth="1050">
-                <StackPanel HorizontalAlignment="Center">
-                    <TextBlock x:Name="txtScanWarningTitle" Text="SCAN DITOLAK"
-                               Foreground="White" FontSize="48" FontWeight="Black"
-                               TextAlignment="Center" Margin="0,0,0,18"/>
-                    <TextBlock x:Name="txtScanWarningMessage" Text="ITEM ALREADY SCANNED"
-                               Foreground="White" FontSize="34" FontWeight="Bold"
-                               TextAlignment="Center" TextWrapping="Wrap" Margin="0,0,0,18"/>
-                    <TextBlock x:Name="txtScanWarningSerial" Text=""
-                               Foreground="White" FontSize="28" FontFamily="Consolas"
-                               TextAlignment="Center"/>
-                </StackPanel>
-            </Border>
-        </Border>
-
         <!-- ================= FOOTER ================= -->
         <Border Grid.Row="3" Background="White" Padding="24,8">
             <Grid>
