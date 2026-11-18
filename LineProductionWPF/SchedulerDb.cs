@@ -37,7 +37,7 @@ namespace LineProductionWPF
     }
 
     /// <summary>
-    /// Read-only access to the DailyScheduler database: the schedule that was made there and its scan numbers.
+    /// Access to the DailyScheduler database: reads schedules and records production sticker scans.
     /// Uses the same db.ini as DailyScheduler (put it next to the .exe).
     /// </summary>
     public static class SchedulerDb
