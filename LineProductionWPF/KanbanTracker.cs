@@ -9,6 +9,7 @@ namespace LineProductionWPF
         public DateTime? Start { get; set; }
         public DateTime? End { get; set; }
         public bool Unobserved { get; set; }   // job was already complete when the app first saw it: its start is unknown
+        public double PausedSeconds { get; set; }   // time the counter was paused while this job was running (not counted)
     }
 
     /// <summary>The numbers of the four kanban boards (big = current job, small = whole day).</summary>
@@ -27,7 +28,8 @@ namespace LineProductionWPF
     /// Decides which job is current and turns the schedule + scan numbers into the board numbers.
     ///  - Current job = first job whose scanned count is below its Jumlah (all done: the last job).
     ///  - The first job starts at 08:00; each later job starts when the previous job completes.
-    ///  - Count = elapsed seconds x pcs per hour / 3600, never above Jumlah, frozen when the job completes.
+    ///  - Count = elapsed seconds x pcs per hour / 3600, never above Jumlah, frozen when the job completes
+    ///    and while the counter is paused.
     ///  - Day numbers add up every job; the job numbers restart when the next job becomes current.
     /// </summary>
     public class KanbanTracker
@@ -35,6 +37,35 @@ namespace LineProductionWPF
         private readonly Dictionary<int, JobTiming> _timings = new Dictionary<int, JobTiming>();   // by urutan
         private string _key = "";
         private DateTime _firstJobStart;
+        private DateTime? _pausedAt;               // set while the counter is paused ("Jeda Counter")
+        private const int PauseKey = -1;           // _timings entry used to keep the pause on disk (no job has urutan -1)
+
+        public bool IsPaused => _pausedAt != null;
+
+        /// <summary>Pause the count (pcs/hour x elapsed time). Scans are still saved; only the expected count stops.</summary>
+        public void Pause(DateTime now)
+        {
+            if (_pausedAt != null) return;
+            _pausedAt = now;
+            Save();
+        }
+
+        /// <summary>Continue the count: the paused time is taken out of every job it overlapped.</summary>
+        public void Resume(DateTime now)
+        {
+            if (_pausedAt == null) return;
+            DateTime from = _pausedAt.Value;
+            foreach (var t in _timings.Values)
+            {
+                if (t.Start == null) continue;
+                DateTime a = t.Start.Value > from ? t.Start.Value : from;
+                DateTime end = t.End ?? now;
+                DateTime b = end < now ? end : now;
+                if (b > a) t.PausedSeconds += (b - a).TotalSeconds;
+            }
+            _pausedAt = null;
+            Save();
+        }
 
         private static string StatePath
         {
@@ -51,12 +82,14 @@ namespace LineProductionWPF
             _key = date.ToString("yyyy-MM-dd") + "|" + lineId;
             _firstJobStart = date.Date.AddHours(8);
             _timings.Clear();
+            _pausedAt = null;
             try
             {
                 if (!File.Exists(StatePath)) return;
                 var all = JsonSerializer.Deserialize<Dictionary<string, Dictionary<int, JobTiming>>>(File.ReadAllText(StatePath));
                 if (all != null && all.TryGetValue(_key, out var saved))
                     foreach (var kv in saved) _timings[kv.Key] = kv.Value;
+                if (_timings.Remove(PauseKey, out var pause)) _pausedAt = pause.Start;
             }
             catch { /* unreadable state file: start the day's timing again */ }
         }
@@ -76,7 +109,9 @@ namespace LineProductionWPF
                 foreach (string old in all.Keys.Where(k => string.CompareOrdinal(k.Substring(0, 10), DateTime.Today.AddDays(-7).ToString("yyyy-MM-dd")) < 0).ToList())
                     all.Remove(old);
 
-                all[_key] = new Dictionary<int, JobTiming>(_timings);
+                var toSave = new Dictionary<int, JobTiming>(_timings);
+                if (_pausedAt != null) toSave[PauseKey] = new JobTiming { Start = _pausedAt };
+                all[_key] = toSave;
                 Directory.CreateDirectory(Path.GetDirectoryName(StatePath)!);
                 File.WriteAllText(StatePath, JsonSerializer.Serialize(all));
             }
@@ -135,7 +170,8 @@ namespace LineProductionWPF
             if (t.Unobserved) return job.Jumlah;
 
             DateTime end = t.End ?? now;
-            double seconds = Math.Max(0, (end - t.Start.Value).TotalSeconds);
+            if (_pausedAt != null && _pausedAt.Value < end) end = _pausedAt.Value;   // paused: the count stands still
+            double seconds = Math.Max(0, (end - t.Start.Value).TotalSeconds - t.PausedSeconds);
             int count = (int)(seconds * job.Target / 3600.0);
             return Math.Min(count, job.Jumlah);
         }

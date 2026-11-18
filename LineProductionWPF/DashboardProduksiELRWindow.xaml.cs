@@ -105,6 +105,7 @@ namespace LineProductionWPF
             NomorLine.Text = line.Name;
             _jobs = new List<KanbanJob>();
             _tracker.Open(_date, line.Id);
+            UpdatePauseButton();
             ResetScanPanel();
             _lastRead = DateTime.MinValue;   // read right away
             Tick();
@@ -120,6 +121,7 @@ namespace LineProductionWPF
                 _date = DateTime.Today;
                 _jobs = new List<KanbanJob>();
                 _tracker.Open(_date, _line.Id);
+                UpdatePauseButton();
                 _lastRead = DateTime.MinValue;
             }
 
@@ -156,6 +158,34 @@ namespace LineProductionWPF
             }
 
             Render();
+        }
+
+        // "Jeda Counter" pauses the expected count (target_per_jam x time); the same button then reads "Lanjut Counter".
+        private void btnPause_Click(object sender, RoutedEventArgs e)
+        {
+            if (_line == null) return;
+
+            if (_tracker.IsPaused) _tracker.Resume(DateTime.Now);
+            else _tracker.Pause(DateTime.Now);
+
+            UpdatePauseButton();
+            Render();
+            txtScan.Focus();   // keep the scanner ready
+        }
+
+        private void UpdatePauseButton()
+        {
+            if (_tracker.IsPaused)
+            {
+                btnPause.Content = "Lanjut Counter";
+                btnPause.Background = new SolidColorBrush(Color.FromRgb(0x16, 0xA3, 0x4A));   // green: press to continue
+                txtStatus.Text = "Counter dijeda.";
+            }
+            else
+            {
+                btnPause.Content = "Jeda Counter";
+                btnPause.ClearValue(Button.BackgroundProperty);                               // back to the red style
+            }
         }
 
         // ---------- display ----------

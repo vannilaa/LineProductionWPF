@@ -181,7 +181,8 @@
 
                 <StackPanel Grid.Column="5" VerticalAlignment="Center">
                     <Button Content="Cetak Ulang" Style="{StaticResource HeaderButton}"/>
-                    <Button Content="Stop Counter" Style="{StaticResource StopButton}"/>
+                    <Button x:Name="btnPause" Content="Jeda Counter" Style="{StaticResource StopButton}"
+                            Click="btnPause_Click"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="6" Margin="10,0" VerticalAlignment="Center" HorizontalAlignment="Center">
