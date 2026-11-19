@@ -64,9 +64,10 @@
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
         <Style x:Key="CardBig" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="52"/>
+            <Setter Property="FontSize" Value="72"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0,-20,0,0"/>
         </Style>
 
         <!-- Day total, shown as a compact chip between the card title and the big job number:
