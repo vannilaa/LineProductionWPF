@@ -162,7 +162,7 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
+    <Grid Background="DarkSlateGray">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>   <!-- header -->
             <RowDefinition Height="Auto"/>   <!-- KPI cards -->
