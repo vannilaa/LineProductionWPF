@@ -411,11 +411,26 @@ namespace LineProductionWPF
                     if (value == null || value == DBNull.Value)
                     {
                         cmd.Parameters.Clear();
+                        // Box name (stored in box.serial, the content of the box label QR):
+                        //   B + yyMMdd + "." + line map code + "." + barcode + "." + box number with 3 digits
+                        //   e.g. B261119.13.9CE.001  (a box number above 999 simply gets more digits).
+                        // The map code is the same one DailyScheduler puts in the sticker serials. When the line has no map code
+                        // the name stays empty (NULL) instead of getting a wrong name. box_no is unique per job and the whole
+                        // insert runs inside the job's application lock, so the name is unique too (UX_box_serial).
                         cmd.CommandText =
-                            "INSERT INTO dbo.box (tanggal, line_production_id, barcode, box_no, qty_per_box, windows_user, machine_name) " +
+                            "INSERT INTO dbo.box (tanggal, line_production_id, barcode, box_no, serial, qty_per_box, windows_user, machine_name) " +
                             "OUTPUT INSERTED.id " +
-                            "SELECT @tanggal, @lp, @barcode, ISNULL(MAX(box_no), 0) + 1, @qty, @user, @machine " +
-                            "FROM dbo.box WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode";
+                            "SELECT @tanggal, @lp, @barcode, n.box_no, " +
+                            "       CASE WHEN m.map_code IS NULL THEN NULL " +
+                            "            ELSE N'B' + CONVERT(NVARCHAR(6), @tanggal, 12) + N'.' + m.map_code + N'.' + @barcode + N'.' + " +
+                            "                 CASE WHEN n.box_no < 1000 THEN RIGHT(N'00' + CAST(n.box_no AS NVARCHAR(10)), 3) " +
+                            "                      ELSE CAST(n.box_no AS NVARCHAR(10)) END " +
+                            "       END, " +
+                            "       @qty, @user, @machine " +
+                            "FROM (SELECT ISNULL(MAX(box_no), 0) + 1 AS box_no FROM dbo.box " +
+                            "      WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode) n " +
+                            "OUTER APPLY (SELECT NULLIF(LTRIM(RTRIM(map_code)), N'') AS map_code " +
+                            "            FROM dbo.line_production WHERE id = @lp) m";
                         AddJobParameters(cmd, tanggal, lineProductionId, barcode);
                         cmd.Parameters.AddWithValue("@qty", qtyPerBox);
                         cmd.Parameters.AddWithValue("@user", Environment.UserName);
