@@ -512,10 +512,28 @@ namespace LineProductionWPF
 
         // ---------- buttons and closing ----------
         // ---------------- Tampilan Web: the production website filtered on the picked line ----------------
+        // Read-only display: clicks, selection, context menu, new windows and navigation away are blocked; only scrolling works.
+        // Never throws: any failure (runtime missing, browser process crash, site unreachable) shows a message and retries.
         private WebView2? _web;
-        private string _webLoaded = "";     // address the web view currently shows
+        private string _webLoaded = "";     // address the web view was last told to open
+        private string _webWanted = "";     // address it should show (newest request wins)
         private bool _webBusy;
         private const double WebZoom = 0.75;   // 75 %
+        private readonly DispatcherTimer _webRetry = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
+        private bool _webRetryHooked;
+
+        // Runs in every page: swallow mouse / keyboard actions that could click a link or button, and make text unselectable.
+        // Mouse wheel, touch and scroll bars are not affected, so scrolling still works.
+        private const string WebLockScript = @"(function () {
+            var stop = function (e) { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+            ['click','dblclick','auxclick','contextmenu','mousedown','mouseup','pointerdown','pointerup','dragstart','selectstart','submit']
+                .forEach(function (t) { document.addEventListener(t, stop, true); });
+            document.addEventListener('keydown', function (e) { if (e.key === 'Tab' || e.key === 'Enter') stop(e); }, true);
+            var st = document.createElement('style');
+            st.textContent = '*{user-select:none!important;-webkit-user-select:none!important;cursor:default!important}' +
+                             'a,button,input,select,textarea,label{pointer-events:none!important}';
+            (document.head || document.documentElement).appendChild(st);
+        })();";
 
         private void tabMain_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -523,60 +541,150 @@ namespace LineProductionWPF
             if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();
         }
 
+        private void ShowWebMessage(string text)
+        {
+            txtWebInfo.Text = text;
+            txtWebInfo.Visibility = Visibility.Visible;
+        }
+
+        private void ScheduleWebRetry()
+        {
+            if (!_webRetryHooked)
+            {
+                _webRetryHooked = true;
+                _webRetry.Tick += (s, e) =>
+                {
+                    _webRetry.Stop();
+                    if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();
+                };
+            }
+            _webRetry.Stop();
+            _webRetry.Start();
+        }
+
+        /// <summary>Throws the web view away; the next ShowWebAsync builds a fresh one.</summary>
+        private void ResetWeb()
+        {
+            if (_web != null)
+            {
+                try { webHost.Children.Remove(_web); } catch { }
+                try { _web.Dispose(); } catch { }
+                _web = null;
+            }
+            _webLoaded = "";
+        }
+
+        private async Task EnsureWebAsync()
+        {
+            if (_web != null && _web.CoreWebView2 != null) return;
+            ResetWeb();   // nothing, or a half-made control
+
+            var web = new WebView2
+            {
+                CreationProperties = new CoreWebView2CreationProperties
+                {
+                    // the default folder (next to the .exe) may not be writable
+                    UserDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LineProductionWPF", "WebView2")
+                }
+            };
+            _web = web;
+            webHost.Children.Add(web);
+            await web.EnsureCoreWebView2Async();
+
+            CoreWebView2 core = web.CoreWebView2;
+            var st = core.Settings;
+            st.AreDefaultContextMenusEnabled = false;
+            st.AreDevToolsEnabled = false;
+            st.IsStatusBarEnabled = false;
+            st.IsZoomControlEnabled = false;
+            st.IsPinchZoomEnabled = false;
+            st.IsSwipeNavigationEnabled = false;
+            st.AreBrowserAcceleratorKeysEnabled = false;
+            st.IsGeneralAutofillEnabled = false;
+            st.IsPasswordAutosaveEnabled = false;
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(WebLockScript);
+
+            core.NewWindowRequested += (s, a) => a.Handled = true;   // no pop-ups
+
+            core.NavigationStarting += (s, a) =>
+            {
+                // only the wanted page (same host + path, the filter may differ) may load; links to anywhere else are cancelled
+                try
+                {
+                    if (Uri.TryCreate(a.Uri, UriKind.Absolute, out Uri? to) && Uri.TryCreate(_webWanted, UriKind.Absolute, out Uri? want) &&
+                        (!to.Authority.Equals(want.Authority, StringComparison.OrdinalIgnoreCase) || to.AbsolutePath != want.AbsolutePath))
+                        a.Cancel = true;
+                }
+                catch { /* let it through */ }
+            };
+
+            web.NavigationCompleted += (s, a) =>
+            {
+                if (a.IsSuccess)
+                {
+                    txtWebInfo.Visibility = Visibility.Collapsed;
+                    web.ZoomFactor = WebZoom;   // keep 75 % after every page load
+                }
+                else if (a.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled)   // "canceled" = a newer address replaced this one
+                {
+                    _webLoaded = "";
+                    ShowWebMessage("Halaman web tidak bisa dimuat (" + a.WebErrorStatus + "). Mencoba lagi...");
+                    ScheduleWebRetry();
+                }
+            };
+
+            core.ProcessFailed += (s, a) =>
+            {
+                // the browser or its renderer died or hung: build a new web view
+                ResetWeb();
+                ShowWebMessage("Tampilan web berhenti (" + a.ProcessFailedKind + "). Memuat ulang...");
+                ScheduleWebRetry();
+            };
+
+            web.ZoomFactor = WebZoom;
+        }
+
         private async Task ShowWebAsync()
         {
-            if (_webBusy) return;
-            if (_line == null)
-            {
-                txtWebUrl.Text = "";
-                txtWebInfo.Text = "Pilih line dulu.";
-                txtWebInfo.Visibility = Visibility.Visible;
-                return;
-            }
-
-            _webBusy = true;
             try
             {
-                string url = SchedulerDb.BuildWebUrl(_line);
-                txtWebUrl.Text = url;
-                if (_web == null)
+                if (_line == null)
                 {
-                    _web = new WebView2
-                    {
-                        CreationProperties = new CoreWebView2CreationProperties
-                        {
-                            // the default folder (next to the .exe) may not be writable
-                            UserDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LineProductionWPF", "WebView2")
-                        }
-                    };
-                    webHost.Children.Add(_web);
-                    await _web.EnsureCoreWebView2Async();
-                    _web.ZoomFactor = WebZoom;
-                    _web.NavigationCompleted += (s, a) => _web.ZoomFactor = WebZoom;   // keep 75 % after every page load
+                    txtWebUrl.Text = "";
+                    ShowWebMessage("Pilih line dulu.");
+                    return;
                 }
-                txtWebInfo.Visibility = Visibility.Collapsed;
-                if (_webLoaded != url)
+
+                _webWanted = SchedulerDb.BuildWebUrl(_line);   // newest request always wins
+                txtWebUrl.Text = _webWanted;
+                if (_webBusy) return;   // the running call picks up the newer address in its loop below
+
+                _webBusy = true;
+                try
                 {
-                    _webLoaded = url;
-                    _web.CoreWebView2.Navigate(url);
+                    while (true)
+                    {
+                        string url = _webWanted;
+                        await EnsureWebAsync();
+                        if (_webLoaded != url)
+                        {
+                            _webLoaded = url;
+                            _web!.CoreWebView2.Navigate(url);
+                        }
+                        if (url == _webWanted) break;   // nothing newer came in meanwhile
+                    }
+                }
+                finally
+                {
+                    _webBusy = false;
                 }
             }
             catch (Exception ex)
             {
-                if (_web != null)
-                {
-                    webHost.Children.Remove(_web);
-                    _web.Dispose();
-                    _web = null;
-                }
-                _webLoaded = "";
-                txtWebInfo.Text = "Tampilan web tidak bisa dibuka (WebView2 Runtime belum terpasang?).\n" + ex.Message +
-                                  "\n\nPakai tombol \"Buka di Browser\".";
-                txtWebInfo.Visibility = Visibility.Visible;
-            }
-            finally
-            {
-                _webBusy = false;
+                ResetWeb();
+                ShowWebMessage("Tampilan web tidak bisa dibuka (WebView2 Runtime belum terpasang?).\n" + ex.Message +
+                               "\n\nPakai tombol \"Buka di Browser\". Mencoba lagi otomatis...");
+                ScheduleWebRetry();
             }
         }
 
@@ -609,7 +717,8 @@ namespace LineProductionWPF
             _clockTimer.Stop();
             _holdTimer.Stop();
             CloseScanPopup();
-            _web?.Dispose();
+            _webRetry.Stop();
+            try { _web?.Dispose(); } catch { }
             serialMonitor.Shutdown();
             base.OnClosed(e);
         }
