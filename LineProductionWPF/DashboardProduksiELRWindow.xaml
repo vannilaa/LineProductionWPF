@@ -400,7 +400,7 @@
                             </DataGridTemplateColumn>
 
                             <!-- End time (finished job: real; others: expected end) -->
-                            <DataGridTemplateColumn Header="Estimasi Selesai" Width="1.6*">
+                            <DataGridTemplateColumn Header="Selesai" Width="1.6*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel VerticalAlignment="Center">
