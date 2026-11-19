@@ -54,7 +54,7 @@ namespace LineProductionWPF
         public DateTime PlannedEnd { get; set; }            // end according to the plan (every job on time, back to back)
         public bool IsProjected { get; set; }               // true = estimate (job is running or waiting)
         public string MulaiNote { get; set; } = "";         // e.g. "(setelah istirahat 12-13)"
-        public string SelesaiNote { get; set; } = "";       // e.g. "(+istirahat 12-13)" or "(lembur)"
+        public string SelesaiNote { get; set; } = "";       // e.g. "(+istirahat 12-13)" or "(lewat 17:00)"
         public string DiffNote { get; set; } = "";
         public int DiffMinutes { get; set; }                // PlannedEnd - Selesai in WORKING minutes (no break): negative = late, positive = ahead
 

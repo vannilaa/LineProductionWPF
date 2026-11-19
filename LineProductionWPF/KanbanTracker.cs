@@ -131,6 +131,10 @@ namespace LineProductionWPF
             return WorkCalendar.NextWorking(anchor);
         }
 
+        /// <summary>End of the shift of that day as text: "17:00" (Friday "17:15").</summary>
+        private static string ShiftEndText(DateTime t) =>
+            WorkCalendar.DayEnd(t).ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+
         /// <summary>The job started right after a break because the previous job ended before or at the start of it.</summary>
         private static bool StartedAfterBreak(DateTime raw, DateTime start)
         {
@@ -203,12 +207,16 @@ namespace LineProductionWPF
 
                 var endNotes = new List<string>();
                 if (WorkCalendar.SpansBreak(start, end)) endNotes.Add("+istirahat " + breakText);
-                if (WorkCalendar.IsAfterShift(end)) endNotes.Add("lembur");
+                // Only the clock time is stated ("lewat 17:00"): the word "lembur" would sound like paid overtime.
+                if (WorkCalendar.IsAfterShift(end)) endNotes.Add("lewat " + ShiftEndText(end));
                 job.SelesaiNote = endNotes.Count == 0 ? "" : "(" + string.Join(", ", endNotes) + ")";
 
                 DateTime early = plannedEnd < end ? plannedEnd : end;
                 DateTime late = plannedEnd < end ? end : plannedEnd;
-                job.DiffNote = job.DiffMinutes != 0 && WorkCalendar.SpansBreak(early, late) ? "(tidak termasuk istirahat " + breakText + ")" : "";
+                var diffNotes = new List<string>();
+                if (job.DiffMinutes != 0 && WorkCalendar.SpansBreak(early, late)) diffNotes.Add("tidak termasuk istirahat " + breakText);
+                if (job.DiffMinutes != 0 && WorkCalendar.IsAfterShift(late)) diffNotes.Add("lewat " + ShiftEndText(late));
+                job.DiffNote = diffNotes.Count == 0 ? "" : "(" + string.Join(", ", diffNotes) + ")";
 
                 actualCursor = end;
 
