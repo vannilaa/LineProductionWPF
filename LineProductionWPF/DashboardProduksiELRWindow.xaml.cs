@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -10,6 +11,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Windows.Controls.Primitives;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
 
 namespace LineProductionWPF
 {
@@ -115,6 +118,7 @@ namespace LineProductionWPF
             _line = line;
             _date = DateTime.Today;
             NomorLine.Text = line.Name;
+            if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();   // web tab is open: show the new line
             _jobs = new List<KanbanJob>();
             _tracker.Open(_date, line.Id);
             UpdatePauseButton();
@@ -506,6 +510,91 @@ namespace LineProductionWPF
         }
 
         // ---------- buttons and closing ----------
+        // ---------------- Tampilan Web: the production website filtered on the picked line ----------------
+        private WebView2? _web;
+        private string _webLoaded = "";     // address the web view currently shows
+        private bool _webBusy;
+
+        private void tabMain_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!ReferenceEquals(e.OriginalSource, tabMain)) return;   // ignore selection changes of grids / combo boxes inside the tabs
+            if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();
+        }
+
+        private async Task ShowWebAsync()
+        {
+            if (_webBusy) return;
+            if (_line == null)
+            {
+                txtWebUrl.Text = "";
+                txtWebInfo.Text = "Pilih line dulu.";
+                txtWebInfo.Visibility = Visibility.Visible;
+                return;
+            }
+
+            _webBusy = true;
+            try
+            {
+                string url = SchedulerDb.BuildWebUrl(_line);
+                txtWebUrl.Text = url;
+                if (_web == null)
+                {
+                    _web = new WebView2
+                    {
+                        CreationProperties = new CoreWebView2CreationProperties
+                        {
+                            // the default folder (next to the .exe) may not be writable
+                            UserDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LineProductionWPF", "WebView2")
+                        }
+                    };
+                    webHost.Children.Add(_web);
+                    await _web.EnsureCoreWebView2Async();
+                }
+                txtWebInfo.Visibility = Visibility.Collapsed;
+                if (_webLoaded != url)
+                {
+                    _webLoaded = url;
+                    _web.CoreWebView2.Navigate(url);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (_web != null)
+                {
+                    webHost.Children.Remove(_web);
+                    _web.Dispose();
+                    _web = null;
+                }
+                _webLoaded = "";
+                txtWebInfo.Text = "Tampilan web tidak bisa dibuka (WebView2 Runtime belum terpasang?).\n" + ex.Message +
+                                  "\n\nPakai tombol \"Buka di Browser\".";
+                txtWebInfo.Visibility = Visibility.Visible;
+            }
+            finally
+            {
+                _webBusy = false;
+            }
+        }
+
+        private void btnWebReload_Click(object sender, RoutedEventArgs e)
+        {
+            _webLoaded = "";
+            _ = ShowWebAsync();
+        }
+
+        private void btnWebBrowser_Click(object sender, RoutedEventArgs e)
+        {
+            if (_line == null) return;
+            try
+            {
+                Process.Start(new ProcessStartInfo(SchedulerDb.BuildWebUrl(_line)) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                txtStatus.Text = "Gagal membuka browser: " + ex.Message;
+            }
+        }
+
         private void btnKeluar_Click(object sender, RoutedEventArgs e)
         {
             Application.Current.Shutdown();
@@ -516,6 +605,7 @@ namespace LineProductionWPF
             _clockTimer.Stop();
             _holdTimer.Stop();
             CloseScanPopup();
+            _web?.Dispose();
             base.OnClosed(e);
         }
 

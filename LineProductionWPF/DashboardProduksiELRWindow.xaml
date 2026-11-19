@@ -360,7 +360,7 @@
             </Border>
 
             <!-- Tabs -->
-            <TabControl Grid.Column="1" Margin="10" Padding="2,6,2,2">
+            <TabControl x:Name="tabMain" Grid.Column="1" Margin="10" Padding="2,6,2,2" SelectionChanged="tabMain_SelectionChanged">
                 <TabItem Header="Jadwal Produksi">
                     <DataGrid x:Name="dgvSchedule"
                               AutoGenerateColumns="False"
@@ -445,7 +445,26 @@
                 </TabItem>
 
                 <TabItem Header="Terima Box / Pallet"/>
-                <TabItem Header="Tampilan Web"/>
+                <TabItem x:Name="tabWeb" Header="Tampilan Web">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="0,0,0,6" LastChildFill="True">
+                            <Button x:Name="btnWebBrowser" DockPanel.Dock="Right" Content="Buka di Browser" Padding="10,2" Margin="6,0,0,0"
+                                    Style="{StaticResource AppButton}" Click="btnWebBrowser_Click"/>
+                            <Button x:Name="btnWebReload" DockPanel.Dock="Right" Content="Muat Ulang" Padding="10,2" Margin="6,0,0,0"
+                                    Style="{StaticResource AppButton}" Click="btnWebReload_Click"/>
+                            <TextBlock x:Name="txtWebUrl" VerticalAlignment="Center" FontSize="13" Foreground="#6B7280"
+                                       TextTrimming="CharacterEllipsis"/>
+                        </DockPanel>
+                        <!-- the WebView2 control is created in code the first time this tab opens -->
+                        <Grid x:Name="webHost" Grid.Row="1"/>
+                        <TextBlock x:Name="txtWebInfo" Grid.Row="1" Visibility="Collapsed" Margin="10" FontSize="16"
+                                   Foreground="#6B7280" TextWrapping="Wrap"/>
+                    </Grid>
+                </TabItem>
                 <TabItem Header="Log Serial / COM"/>
             </TabControl>
         </Grid>

@@ -9,6 +9,9 @@ namespace LineProductionWPF
     {
         public int Id { get; set; }
         public string Name { get; set; } = "";
+
+        /// <summary>Previous name of the line (column old_name); the website still filters on it. Empty = not set.</summary>
+        public string OldName { get; set; } = "";
     }
 
     /// <summary>One job of a day's schedule, with what has been scanned so far.</summary>
@@ -161,16 +164,43 @@ namespace LineProductionWPF
             }
         }
 
+        /// <summary>Address of the production website (page without the filter). Optional "WebUrl=" in db.ini overrides it.</summary>
+        private const string DefaultWebUrl = "http://192.168.1.194:8080/swi/pages/bpbj/production-all-lines.php";
+
+        /// <summary>
+        /// Website address showing this line, e.g. old name "RC0 # 2" gives ...production-all-lines.php?filter_line=RC0+%23+2
+        /// The website knows the line by its OLD name; a line without old_name falls back to its current name.
+        /// </summary>
+        public static string BuildWebUrl(KanbanLine line)
+        {
+            string baseUrl = DefaultWebUrl;
+            try
+            {
+                if (File.Exists(SettingsPath))
+                    foreach (string raw in File.ReadAllLines(SettingsPath))
+                    {
+                        string t = raw.Trim();
+                        int eq = t.IndexOf('=');
+                        if (eq > 0 && t.Substring(0, eq).Trim().Equals("WebUrl", StringComparison.OrdinalIgnoreCase) && t.Length > eq + 1)
+                            baseUrl = t.Substring(eq + 1).Trim();
+                    }
+            }
+            catch (IOException) { /* keep the default address */ }
+
+            string filter = string.IsNullOrWhiteSpace(line.OldName) ? line.Name : line.OldName;
+            return baseUrl + "?filter_line=" + System.Net.WebUtility.UrlEncode(filter);
+        }
+
         public static List<KanbanLine> LoadLines()
         {
             var list = new List<KanbanLine>();
             using var con = new SqlConnection(ConnectionString);
             con.Open();
             using var cmd = con.CreateCommand();
-            cmd.CommandText = "SELECT id, name FROM line_production ORDER BY name";
+            cmd.CommandText = "SELECT id, name, old_name FROM line_production ORDER BY name";
             using var r = cmd.ExecuteReader();
             while (r.Read())
-                list.Add(new KanbanLine { Id = r.GetInt32(0), Name = r.GetString(1) });
+                list.Add(new KanbanLine { Id = r.GetInt32(0), Name = r.GetString(1), OldName = r.IsDBNull(2) ? "" : r.GetString(2).Trim() });
             return list;
         }
 
@@ -182,13 +212,13 @@ namespace LineProductionWPF
             con.Open();
             using var cmd = con.CreateCommand();
             cmd.CommandText =
-                "SELECT DISTINCT lp.id, lp.name FROM schedule s " +
+                "SELECT DISTINCT lp.id, lp.name, lp.old_name FROM schedule s " +
                 "JOIN line_production lp ON lp.id = s.line_production_id " +
                 "WHERE s.tanggal = @tanggal ORDER BY lp.name";
             cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
             using var r = cmd.ExecuteReader();
             while (r.Read())
-                list.Add(new KanbanLine { Id = r.GetInt32(0), Name = r.GetString(1) });
+                list.Add(new KanbanLine { Id = r.GetInt32(0), Name = r.GetString(1), OldName = r.IsDBNull(2) ? "" : r.GetString(2).Trim() });
             return list;
         }
 
