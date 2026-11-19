@@ -515,6 +515,7 @@ namespace LineProductionWPF
         private WebView2? _web;
         private string _webLoaded = "";     // address the web view currently shows
         private bool _webBusy;
+        private const double WebZoom = 0.75;   // 75 %
 
         private void tabMain_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -550,6 +551,8 @@ namespace LineProductionWPF
                     };
                     webHost.Children.Add(_web);
                     await _web.EnsureCoreWebView2Async();
+                    _web.ZoomFactor = WebZoom;
+                    _web.NavigationCompleted += (s, a) => _web.ZoomFactor = WebZoom;   // keep 75 % after every page load
                 }
                 txtWebInfo.Visibility = Visibility.Collapsed;
                 if (_webLoaded != url)
