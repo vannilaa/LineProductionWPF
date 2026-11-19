@@ -610,6 +610,7 @@ namespace LineProductionWPF
             _holdTimer.Stop();
             CloseScanPopup();
             _web?.Dispose();
+            serialMonitor.Shutdown();
             base.OnClosed(e);
         }
 

@@ -465,7 +465,9 @@
                                    Foreground="#6B7280" TextWrapping="Wrap"/>
                     </Grid>
                 </TabItem>
-                <TabItem Header="Log Serial / COM"/>
+                <TabItem x:Name="tabSerial" Header="Log Serial / COM">
+                    <local:SerialMonitorView x:Name="serialMonitor" Margin="4"/>
+                </TabItem>
             </TabControl>
         </Grid>
 
