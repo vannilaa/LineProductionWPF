@@ -302,7 +302,7 @@
         <!-- ================= MAIN AREA ================= -->
         <Grid Grid.Row="2" Margin="10,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="340"/>   <!-- scan panel: fixed width -->
+                <ColumnDefinition Width="170"/>   <!-- scan panel: fixed width (half of the original 340) -->
                 <ColumnDefinition Width="*"/>     <!-- tabs: takes the rest -->
             </Grid.ColumnDefinitions>
 
