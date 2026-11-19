@@ -34,9 +34,43 @@ namespace LineProductionWPF
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
+        // SAME BARCODE IN MORE THAN ONE ROW of the schedule: the sticker numbers of THIS row (see LoadJobs).
+        public int FirstNo { get; set; } = 1;
+        public int LastNo { get; set; } = int.MaxValue;     // int.MaxValue = the last row of the barcode (takes everything above)
+        public int Occurrence { get; set; } = 1;            // 1 = first row of this barcode in the schedule
+        public int SameBarcodeRows { get; set; } = 1;       // how many rows of the schedule use this barcode
+        public int BarcodeTotalJumlah { get; set; }         // planned quantity of ALL rows with this barcode
+
+        public DateTime? ScheduleCreatedAt { get; set; }    // schedule.created_at (null for schedules made before that column existed)
+        public DateTime? LastScanAt { get; set; }           // scanned_at of the latest scan of this row
+
         // shown in the job table
         public int Count { get; set; }
         public string Status { get; set; } = "";
+
+        // Times (set by KanbanTracker.Calculate). Finished jobs show what really happened, the others an estimate.
+        public DateTime Mulai { get; set; }                 // start
+        public DateTime Selesai { get; set; }               // end (finished) or expected end
+        public DateTime PlannedEnd { get; set; }            // end according to the plan (every job on time, back to back)
+        public bool IsProjected { get; set; }               // true = estimate (job is running or waiting)
+        public string MulaiNote { get; set; } = "";         // e.g. "(setelah istirahat 12-13)"
+        public string SelesaiNote { get; set; } = "";       // e.g. "(+istirahat 12-13)" or "(lembur)"
+        public string DiffNote { get; set; } = "";
+        public int DiffMinutes { get; set; }                // PlannedEnd - Selesai in WORKING minutes (no break): negative = late, positive = ahead
+
+        public string MulaiText => Mulai.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        public string SelesaiText => Selesai.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        public string DiffKind => DiffMinutes > 0 ? "Early" : DiffMinutes < 0 ? "Late" : "OnTime";
+        public string DiffText
+        {
+            get
+            {
+                if (DiffMinutes == 0) return "0 mnt";
+                string sign = DiffMinutes > 0 ? "+" : "-";
+                int abs = Math.Abs(DiffMinutes);
+                return abs < 60 ? sign + abs + " mnt" : sign + (abs / 60) + "j " + (abs % 60).ToString("00") + "m";
+            }
+        }
     }
 
     public enum ScanOutcome
@@ -163,22 +197,38 @@ namespace LineProductionWPF
             using var con = new SqlConnection(ConnectionString);
             con.Open();
             using var cmd = con.CreateCommand();
+            // SAME BARCODE IN MORE THAN ONE ROW of the schedule: the stickers of a barcode are ONE pool numbered in schedule
+            // order (row 1 = 1..J1, row 2 = J1+1..J1+J2, ... as DailyScheduler prints them). Each row counts only the scans
+            // of its own range; the LAST row of a barcode also takes everything above, so a barcode used once counts all
+            // its stickers, as before. Boxes stay per barcode (ASSUMPTION, see RecordStickerScan).
             cmd.CommandText =
-                "SELECT i.urutan, i.barcode, i.jumlah, " +
+                "WITH items AS ( " +
+                "  SELECT i.urutan, i.barcode, i.jumlah, s.tanggal, s.line_production_id, s.created_at, " +
+                "         SUM(i.jumlah) OVER (PARTITION BY i.barcode ORDER BY i.urutan ROWS UNBOUNDED PRECEDING) - i.jumlah AS first_off, " +
+                "         CAST(ROW_NUMBER() OVER (PARTITION BY i.barcode ORDER BY i.urutan) AS INT) AS occurrence, " +
+                "         COUNT(*) OVER (PARTITION BY i.barcode) AS same_rows, " +
+                "         SUM(i.jumlah) OVER (PARTITION BY i.barcode) AS barcode_total " +
+                "  FROM schedule s " +
+                "  JOIN schedule_item i ON i.schedule_id = s.id " +
+                "  WHERE s.tanggal = @tanggal AND s.line_production_id = @lp) " +
+                "SELECT it.urutan, it.barcode, it.jumlah, " +
                 "       COALESCE(p.part_number_code, p.part_number), p.job_no, p.position, p.target_per_jam, " +
-                "       ISNULL(v.discan, 0), ISNULL(p.qty_per_box, 0), p.part, " +
-                "       CASE WHEN i.jumlah > 0 THEN ((i.jumlah - 1) / CASE WHEN p.qty_per_box > 0 THEN p.qty_per_box ELSE 1 END) + 1 ELSE 0 END, " +
-                "       (SELECT COUNT(*) FROM dbo.box b WHERE b.tanggal = s.tanggal AND b.line_production_id = s.line_production_id " +
-                "          AND b.barcode = i.barcode AND b.closed_at IS NOT NULL), " +
-                "       (SELECT COUNT(*) FROM sticker_scan c JOIN dbo.box b ON b.id = c.box_id WHERE b.tanggal = s.tanggal " +
-                "          AND b.line_production_id = s.line_production_id AND b.barcode = i.barcode AND b.closed_at IS NULL), " +
-                "       p.customer " +
-                "FROM schedule s " +
-                "JOIN schedule_item i ON i.schedule_id = s.id " +
-                "LEFT JOIN product p ON p.barcode = i.barcode " +
-                "LEFT JOIN v_job_scan_summary v ON v.tanggal = s.tanggal AND v.line_production_id = s.line_production_id AND v.barcode = i.barcode " +
-                "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp " +
-                "ORDER BY i.urutan";
+                "       ISNULL(sc.cnt, 0), ISNULL(p.qty_per_box, 0), p.part, " +
+                "       CASE WHEN it.jumlah > 0 THEN ((it.jumlah - 1) / CASE WHEN p.qty_per_box > 0 THEN p.qty_per_box ELSE 1 END) + 1 ELSE 0 END, " +
+                "       (SELECT COUNT(*) FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
+                "          AND b.barcode = it.barcode AND b.closed_at IS NOT NULL), " +
+                "       (SELECT COUNT(*) FROM sticker_scan c JOIN dbo.box b ON b.id = c.box_id WHERE b.tanggal = it.tanggal " +
+                "          AND b.line_production_id = it.line_production_id AND b.barcode = it.barcode AND b.closed_at IS NULL), " +
+                "       p.customer, " +
+                "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at " +
+                "FROM items it " +
+                "LEFT JOIN product p ON p.barcode = it.barcode " +
+                "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
+                "             FROM print_sticker ps JOIN sticker_scan c ON c.print_sticker_id = ps.id " +
+                "             WHERE ps.tanggal = it.tanggal AND ps.line_production_id = it.line_production_id AND ps.barcode = it.barcode " +
+                "               AND ps.sticker_no > it.first_off " +
+                "               AND (ps.sticker_no <= it.first_off + it.jumlah OR it.occurrence = it.same_rows)) sc " +
+                "ORDER BY it.urutan";
             cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
             cmd.Parameters.AddWithValue("@lp", lineProductionId);
             cmd.CommandTimeout = 30;
@@ -186,6 +236,9 @@ namespace LineProductionWPF
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
+                int firstOffset = r.GetInt32(14);
+                int occurrence = r.GetInt32(15);
+                int sameRows = r.GetInt32(16);
                 list.Add(new KanbanJob
                 {
                     Urutan = r.GetInt32(0),
@@ -201,7 +254,14 @@ namespace LineProductionWPF
                     BoxesRequired = r.GetInt32(10),
                     CompletedBoxes = r.GetInt32(11),
                     OpenBoxScans = r.GetInt32(12),
-                    Customer = r.IsDBNull(13) ? "" : r.GetString(13).Trim()
+                    Customer = r.IsDBNull(13) ? "" : r.GetString(13).Trim(),
+                    FirstNo = firstOffset + 1,
+                    LastNo = occurrence == sameRows ? int.MaxValue : firstOffset + r.GetInt32(2),
+                    Occurrence = occurrence,
+                    SameBarcodeRows = sameRows,
+                    BarcodeTotalJumlah = r.GetInt32(17),
+                    ScheduleCreatedAt = r.IsDBNull(18) ? null : r.GetDateTime(18),
+                    LastScanAt = r.IsDBNull(19) ? null : r.GetDateTime(19)
                 });
             }
             return list;
@@ -232,9 +292,15 @@ namespace LineProductionWPF
         /// when it holds qtyPerBox scans, or when the job reaches its planned quantity (then it is marked partial).
         /// All scans of one job are serialised with an application lock, so several scan stations can work on the
         /// same job without deadlocks or two stations opening the same box number.
+        ///
+        /// SAME BARCODE IN MORE THAN ONE ROW of the schedule: <paramref name="plannedQuantity"/> is the planned quantity of
+        /// ALL rows with this barcode, and the sticker must be inside this row's number range (rowFirstNo..rowLastNo,
+        /// rowQuantity = this row's Jumlah). ASSUMPTION - REVISIT LATER: boxes belong to the barcode, not to the row, so
+        /// a partly filled box at the end of a row is NOT closed; the next row's scans keep filling it. Only the last
+        /// piece of the whole barcode closes a partial box. (Same assumption as DailyScheduler, MainWindow.StickerNumberOffset.)
         /// </summary>
         public static ScanResult RecordStickerScan(DateTime tanggal, int lineProductionId, string barcode, string serial,
-            int qtyPerBox, int plannedQuantity)
+            int qtyPerBox, int plannedQuantity, int rowFirstNo, int rowLastNo, int rowQuantity)
         {
             serial = (serial ?? "").Trim();
             barcode = (barcode ?? "").Trim();
@@ -242,7 +308,7 @@ namespace LineProductionWPF
                 return Reject(ScanOutcome.InvalidInput, "Kode scan kosong.");
             if (qtyPerBox <= 0)
                 return Reject(ScanOutcome.InvalidInput, "Qty per box produk ini belum diatur. Scan tidak disimpan.");
-            if (plannedQuantity <= 0)
+            if (plannedQuantity <= 0 || rowQuantity <= 0)
                 return Reject(ScanOutcome.InvalidInput, "Jumlah job belum valid. Scan tidak disimpan.");
 
             using var con = new SqlConnection(ConnectionString);
@@ -264,13 +330,22 @@ namespace LineProductionWPF
 
                 // 2. The serial must belong to a sticker printed for this exact job.
                 long printStickerId;
+                int stickerNo = 0;
                 using (var cmd = Command(con, tx,
-                    "SELECT id FROM print_sticker " +
+                    "SELECT id, sticker_no FROM print_sticker " +
                     "WHERE tanggal = @tanggal AND line_production_id = @lp AND barcode = @barcode AND serial = @serial"))
                 {
                     AddJobParameters(cmd, tanggal, lineProductionId, barcode);
                     cmd.Parameters.AddWithValue("@serial", serial);
-                    object? value = cmd.ExecuteScalar();
+                    object? value = null;
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        if (reader.Read())
+                        {
+                            value = Convert.ToInt64(reader.GetValue(0));
+                            stickerNo = Convert.ToInt32(reader.GetValue(1));
+                        }
+                    }
                     if (value == null || value == DBNull.Value)
                     {
                         // Same serial on another product of this line/date: the operator picked the wrong job.
@@ -301,16 +376,27 @@ namespace LineProductionWPF
                     if (state == 2) return Reject(ScanOutcome.WrittenOff, "Stiker ini sudah ditandai hilang/rusak dan tidak dapat discan.");
                 }
 
-                // 4. The job must not already be full.
-                int totalBefore;
+                // 4. The sticker must belong to this row, and neither the row nor the whole barcode may already be full.
+                if (stickerNo < rowFirstNo || stickerNo > rowLastNo)
+                    return Reject(ScanOutcome.WrongJob,
+                        "PERINGATAN: Stiker no. " + stickerNo + " bukan milik baris job yang sedang aktif (nomor " + rowFirstNo +
+                        " - " + (rowLastNo == int.MaxValue ? "akhir" : rowLastNo.ToString()) + ").");
+
+                int totalBefore, rowBefore;
                 using (var cmd = Command(con, tx,
-                    "SELECT COUNT(*) FROM sticker_scan c JOIN print_sticker s ON s.id = c.print_sticker_id " +
+                    "SELECT COUNT(*), COUNT(CASE WHEN s.sticker_no >= @firstNo AND s.sticker_no <= @lastNo THEN 1 END) " +
+                    "FROM sticker_scan c JOIN print_sticker s ON s.id = c.print_sticker_id " +
                     "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp AND s.barcode = @barcode"))
                 {
                     AddJobParameters(cmd, tanggal, lineProductionId, barcode);
-                    totalBefore = Convert.ToInt32(cmd.ExecuteScalar());
+                    cmd.Parameters.AddWithValue("@firstNo", rowFirstNo);
+                    cmd.Parameters.AddWithValue("@lastNo", rowLastNo);
+                    using var reader = cmd.ExecuteReader();
+                    reader.Read();
+                    totalBefore = reader.GetInt32(0);
+                    rowBefore = reader.GetInt32(1);
                 }
-                if (totalBefore >= plannedQuantity)
+                if (totalBefore >= plannedQuantity || rowBefore >= rowQuantity)
                     return Reject(ScanOutcome.JobFull, "Jumlah scan untuk job ini sudah mencapai jumlah rencana.");
 
                 // 5. The open box of this job, or a new one.

@@ -140,7 +140,6 @@ namespace LineProductionWPF
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
                         // otherwise the read is older than the panel.
                         _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;
-                        _tracker.Update(_jobs, DateTime.Now);
                         txtStatus.Text = jobs.Count == 0
                             ? "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
                             : "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
@@ -304,8 +303,11 @@ namespace LineProductionWPF
             try
             {
                 txtStatus.Text = "Menyimpan scan...";
+                // SAME BARCODE IN MORE THAN ONE ROW: the scan is checked against this row's sticker range, while the box
+                // (and the planned total that closes the last partial box) belongs to the whole barcode.
                 ScanResult result = await Task.Run(() =>
-                    SchedulerDb.RecordStickerScan(p.Date, p.Line.Id, p.Job.Barcode, p.Code, p.Job.QtyPerBox, p.Job.Jumlah));
+                    SchedulerDb.RecordStickerScan(p.Date, p.Line.Id, p.Job.Barcode, p.Code, p.Job.QtyPerBox,
+                        p.Job.BarcodeTotalJumlah, p.Job.FirstNo, p.Job.LastNo, p.Job.Jumlah));
 
                 if (!result.Saved)
                 {
