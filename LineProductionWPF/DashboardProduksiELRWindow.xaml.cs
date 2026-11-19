@@ -215,11 +215,11 @@ namespace LineProductionWPF
             Posisi.Text = _current == null || _current.PosisiPart.Length == 0 ? "-" : _current.PosisiPart;
 
             txtTarget.Text = n.TargetJob.ToString();
-            txtTargetJam.Text = "/" + n.TargetDay;
+            txtTargetJam.Text = n.TargetDay.ToString();
             txtActual.Text = n.ActualJob.ToString();
-            txtActualJam.Text = "/" + n.ActualDay;
+            txtActualJam.Text = n.ActualDay.ToString();
             txtCount.Text = n.CountJob.ToString();
-            txtCountJam.Text = "/" + n.CountDay;
+            txtCountJam.Text = n.CountDay.ToString();
 
             UpdateSelisih(n.SelisihJob, n.SelisihDay);
             UpdateScanCounters();
@@ -438,6 +438,7 @@ namespace LineProductionWPF
             txtSelisihTitle.Foreground = textBrush;
             txtSelisih.Foreground = textBrush;
             txtSelisihJam.Foreground = textBrush;
+            txtSelisihCaption.Foreground = textBrush;
         }
 
         // Light backgrounds get black text, dark backgrounds get white text.

@@ -63,13 +63,29 @@
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
-        <Style x:Key="CardSmall" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="72"/>
+
+        <!-- Day total, shown as a compact chip between the card title and the big job number:
+             small caption on the left, total on the right. The chip background is a translucent
+             dark tint so it also works on the coloured Selisih card. -->
+        <Style x:Key="TotalChip" TargetType="Border">
+            <Setter Property="Background" Value="#14000000"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="12,2"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+        <Style x:Key="TotalCaption" TargetType="TextBlock">
+            <Setter Property="Text" Value="TOTAL HARI"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Opacity" Value="0.65"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+        </Style>
+        <Style x:Key="TotalValue" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="34"/>
             <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="#6B7280"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
-            <Setter Property="Foreground" Value="#909090"/>
-            <Setter Property="LineHeight" Value="54"/>
-            <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
 
         <!-- ===== Table ===== -->
@@ -228,32 +244,52 @@
             <Border Grid.Column="0" Style="{StaticResource Card}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="TARGET PRODUKSI" Style="{StaticResource CardTitle}"/>
+                    <Border Style="{StaticResource TotalChip}">
+                        <DockPanel>
+                            <TextBlock Style="{StaticResource TotalCaption}"/>
+                            <TextBlock x:Name="txtTargetJam" Text="0" Style="{StaticResource TotalValue}"/>
+                        </DockPanel>
+                    </Border>
                     <TextBlock x:Name="txtTarget" Text="0" Style="{StaticResource CardBig}"/>
-                    <TextBlock x:Name="txtTargetJam" Text="/0" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
 
             <Border Grid.Column="1" Style="{StaticResource Card}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="ACTUAL PRODUKSI" Style="{StaticResource CardTitle}" Foreground="#0800FF"/>
+                    <Border Style="{StaticResource TotalChip}">
+                        <DockPanel>
+                            <TextBlock Style="{StaticResource TotalCaption}"/>
+                            <TextBlock x:Name="txtActualJam" Text="0" Style="{StaticResource TotalValue}"/>
+                        </DockPanel>
+                    </Border>
                     <TextBlock x:Name="txtActual" Text="0" Style="{StaticResource CardBig}" Foreground="#0800FF"/>
-                    <TextBlock x:Name="txtActualJam" Text="/0" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
 
             <Border Grid.Column="2" Style="{StaticResource Card}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="COUNT PRODUKSI" Style="{StaticResource CardTitle}"/>
+                    <Border Style="{StaticResource TotalChip}">
+                        <DockPanel>
+                            <TextBlock Style="{StaticResource TotalCaption}"/>
+                            <TextBlock x:Name="txtCountJam" Text="0" Style="{StaticResource TotalValue}"/>
+                        </DockPanel>
+                    </Border>
                     <TextBlock x:Name="txtCount" Text="0" Style="{StaticResource CardBig}"/>
-                    <TextBlock x:Name="txtCountJam" Text="/0" Style="{StaticResource CardSmall}"/>
                 </StackPanel>
             </Border>
 
             <Border x:Name="bdSelisih" Grid.Column="3" Style="{StaticResource Card}" Background="#EF4444">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock x:Name="txtSelisihTitle" Text="SELISIH" Style="{StaticResource CardTitle}"/>
+                    <Border Style="{StaticResource TotalChip}">
+                        <DockPanel>
+                            <TextBlock x:Name="txtSelisihCaption" Style="{StaticResource TotalCaption}"/>
+                            <TextBlock x:Name="txtSelisihJam" Text="0" Style="{StaticResource TotalValue}" Foreground="Black"/>
+                        </DockPanel>
+                    </Border>
                     <TextBlock x:Name="txtSelisih" Text="0" Style="{StaticResource CardBig}"/>
-                    <TextBlock x:Name="txtSelisihJam" Text="0" Style="{StaticResource CardSmall}" Foreground="Black"/>
                 </StackPanel>
             </Border>
         </Grid>
@@ -325,7 +361,7 @@
                               CanUserAddRows="False"
                               HeadersVisibility="Column"
                               GridLinesVisibility="None"
-                              Background="White" BorderThickness="0"
+                              Background="Aquamarine" BorderThickness="0"
                               MinRowHeight="38" FontSize="14"
                               AlternationCount="2"
                               ColumnHeaderStyle="{StaticResource GridHeader}"
