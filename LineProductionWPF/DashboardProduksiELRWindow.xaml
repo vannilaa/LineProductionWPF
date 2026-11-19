@@ -338,7 +338,7 @@
                         </StackPanel>
                     </Border>
 
-                    <TextBlock x:Name="txtScanPerBox" Grid.Row="3" Text="SCAN per BOX"/>
+                    <TextBlock x:Name="txtScanPerBox" Grid.Row="3" Text="SCAN per BOX" TextWrapping="Wrap"/>
 
                     <Border Grid.Row="4" Background="#EEF4FA" Padding="8,4" Margin="0,5,0,0">
                         <Grid>

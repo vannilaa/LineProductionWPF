@@ -48,6 +48,11 @@ namespace LineProductionWPF
         {
             Interval = TimeSpan.FromSeconds(1)   // how long 10 / 10 stays on screen
         };
+        // After a box completes the scan list stays visible for a moment (so the last scan is not gone at once), then clears.
+        private readonly DispatcherTimer _clearListTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
         private int ScanPerBox => _current != null && _current.QtyPerBox > 0 ? _current.QtyPerBox : 1;
         private int BoxesPerPallet => DefaultBoxesPerPallet;
         private int BoxesCompleted => _palletCount * BoxesPerPallet + _boxCount;
@@ -67,6 +72,12 @@ namespace LineProductionWPF
                 _holdTimer.Stop();
                 txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4)); // back to blue
                 UpdateScanCounters();                                                          // show the real 0
+            };
+
+            _clearListTimer.Tick += (s, e) =>
+            {
+                _clearListTimer.Stop();
+                _scans.Clear();
             };
 
             _clockTimer.Interval = TimeSpan.FromSeconds(1);
@@ -247,6 +258,7 @@ namespace LineProductionWPF
         private void ResetScanPanel()
         {
             _holdTimer.Stop();
+            _clearListTimer.Stop();
             txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4));
             _scans.Clear();
             _allScanned.Clear();
@@ -330,6 +342,13 @@ namespace LineProductionWPF
                 if (!IsActive(p)) return;
 
                 _allScanned.Add(p.Code);
+
+                // The previous box's list is still on screen (held for a moment): the next scan starts the new list now.
+                if (_clearListTimer.IsEnabled)
+                {
+                    _clearListTimer.Stop();
+                    _scans.Clear();
+                }
                 _scans.Add(p.Code);
                 lstScans.ScrollIntoView(p.Code);
 
@@ -342,10 +361,14 @@ namespace LineProductionWPF
                 if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && result.CompletedBoxes % BoxesPerPallet == 0)
                     ShowPalletFull();
 
-                // A box was just completed: empty the list on screen so the next box starts with a clean list.
+                // A box was just completed: the list on screen is emptied after a short hold (so the last scan stays visible
+                // for a moment) and the next box starts with a clean list.
                 // Only the visible list is cleared; _allScanned (the "already scanned this session" check) is kept.
                 if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0)
-                    _scans.Clear();
+                {
+                    _clearListTimer.Stop();
+                    _clearListTimer.Start();
+                }
 
                 txtStatus.Text = result.Message;
                 UpdateScanCounters();
@@ -399,7 +422,7 @@ namespace LineProductionWPF
         private void UpdateScanCounters()
         {
             txtScanPerBox.Text = "SCAN per BOX: " + _scansInBox + " / " + ScanPerBox + "\n" +
-                                 "Box: " + (string.IsNullOrEmpty(_boxName) ? "-" : _boxName + (_boxFull ? " (penuh)" : ""));
+                                 "Box: " + (string.IsNullOrEmpty(_boxName) ? "-" : _boxName + (_boxFull ? "\n(penuh)" : ""));
             txtPerBox.Text = (_current?.BoxesRequired ?? 0).ToString();
             txtPallet.Text = "Pallet: " + _palletCount;
 
