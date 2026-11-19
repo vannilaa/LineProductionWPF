@@ -53,13 +53,18 @@
             <Setter Property="Padding" Value="15"/>
             <Setter Property="Margin" Value="10"/>
         </Style>
+        <!-- KPI row: same look as Card, tighter padding and margin -->
+        <Style x:Key="KpiCard" TargetType="Border" BasedOn="{StaticResource Card}">
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Margin" Value="6,6,6,2"/>
+        </Style>
         <Style x:Key="CardTitle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontSize" Value="18"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
         <Style x:Key="CardBig" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="72"/>
+            <Setter Property="FontSize" Value="52"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
@@ -70,18 +75,18 @@
         <Style x:Key="TotalChip" TargetType="Border">
             <Setter Property="Background" Value="#14000000"/>
             <Setter Property="CornerRadius" Value="8"/>
-            <Setter Property="Padding" Value="12,2"/>
-            <Setter Property="Margin" Value="0,4,0,0"/>
+            <Setter Property="Padding" Value="10,0"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
         </Style>
         <Style x:Key="TotalCaption" TargetType="TextBlock">
             <Setter Property="Text" Value="TOTAL HARI"/>
-            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Opacity" Value="0.65"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
         </Style>
         <Style x:Key="TotalValue" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="34"/>
+            <Setter Property="FontSize" Value="24"/>
             <Setter Property="FontWeight" Value="Bold"/>
             <Setter Property="Foreground" Value="#6B7280"/>
             <Setter Property="HorizontalAlignment" Value="Right"/>
@@ -241,7 +246,7 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <Border Grid.Column="0" Style="{StaticResource Card}">
+            <Border Grid.Column="0" Style="{StaticResource KpiCard}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="TARGET PRODUKSI" Style="{StaticResource CardTitle}"/>
                     <Border Style="{StaticResource TotalChip}">
@@ -254,7 +259,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Grid.Column="1" Style="{StaticResource Card}">
+            <Border Grid.Column="1" Style="{StaticResource KpiCard}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="ACTUAL PRODUKSI" Style="{StaticResource CardTitle}" Foreground="#0800FF"/>
                     <Border Style="{StaticResource TotalChip}">
@@ -267,7 +272,7 @@
                 </StackPanel>
             </Border>
 
-            <Border Grid.Column="2" Style="{StaticResource Card}">
+            <Border Grid.Column="2" Style="{StaticResource KpiCard}">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock Text="COUNT PRODUKSI" Style="{StaticResource CardTitle}"/>
                     <Border Style="{StaticResource TotalChip}">
@@ -280,7 +285,7 @@
                 </StackPanel>
             </Border>
 
-            <Border x:Name="bdSelisih" Grid.Column="3" Style="{StaticResource Card}" Background="#EF4444">
+            <Border x:Name="bdSelisih" Grid.Column="3" Style="{StaticResource KpiCard}" Background="#EF4444">
                 <StackPanel VerticalAlignment="Center">
                     <TextBlock x:Name="txtSelisihTitle" Text="SELISIH" Style="{StaticResource CardTitle}"/>
                     <Border Style="{StaticResource TotalChip}">
