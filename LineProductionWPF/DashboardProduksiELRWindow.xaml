@@ -306,8 +306,13 @@
                 <ColumnDefinition Width="*"/>     <!-- tabs: takes the rest -->
             </Grid.ColumnDefinitions>
 
-            <!-- Scan panel -->
-            <Border Grid.Column="0" Style="{StaticResource Card}">
+            <!-- Scan panel: takes the top half of the column (the bottom half is left empty) -->
+            <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" Style="{StaticResource Card}">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -356,6 +361,7 @@
                              BorderBrush="Black" Background="#FFF1E2E2" FontFamily="Consolas"/>
                 </Grid>
             </Border>
+            </Grid>
 
             <!-- Tabs -->
             <TabControl Grid.Column="1" Margin="10" Padding="2,6,2,2">
