@@ -52,6 +52,8 @@ namespace LineProductionWPF
         private int BoxesPerPallet => DefaultBoxesPerPallet;
         private int BoxesCompleted => _palletCount * BoxesPerPallet + _boxCount;
         private int _scansInBox, _boxCount, _palletCount;
+        private string _boxName = "";      // name of the box being filled (or the one that was just completed), e.g. B261119.13.9CE.001
+        private bool _boxFull;             // true right after a scan completed the box (shown as "penuh")
 
         public DashboardProduksiELRWindow()
         {
@@ -200,6 +202,8 @@ namespace LineProductionWPF
             if (_syncBoxProgress && _current != null)
             {
                 _scansInBox = _current.OpenBoxScans;
+                _boxName = _current.OpenBoxSerial;
+                _boxFull = false;
                 _boxCount = _current.CompletedBoxes % BoxesPerPallet;
                 _palletCount = _current.CompletedBoxes / BoxesPerPallet;
             }
@@ -247,6 +251,8 @@ namespace LineProductionWPF
             _scans.Clear();
             _allScanned.Clear();
             _scansInBox = _boxCount = _palletCount = 0;
+            _boxName = "";
+            _boxFull = false;
         }
 
         // ---------- scanning ----------
@@ -329,6 +335,8 @@ namespace LineProductionWPF
 
                 // The database is authoritative: a box holds qty_per_box individual sticker scans.
                 _scansInBox = result.ScansInOpenBox;
+                _boxName = result.BoxSerial;                                        // the box this scan went into
+                _boxFull = result.ScansInOpenBox == 0 && result.CompletedBoxes > 0; // that box is now complete
                 _boxCount = result.CompletedBoxes % BoxesPerPallet;
                 _palletCount = result.CompletedBoxes / BoxesPerPallet;
                 if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && result.CompletedBoxes % BoxesPerPallet == 0)
@@ -385,7 +393,8 @@ namespace LineProductionWPF
 
         private void UpdateScanCounters()
         {
-            txtScanPerBox.Text = "SCAN per BOX: " + _scansInBox + " / " + ScanPerBox;
+            txtScanPerBox.Text = "SCAN per BOX: " + _scansInBox + " / " + ScanPerBox + "\n" +
+                                 "Box: " + (string.IsNullOrEmpty(_boxName) ? "-" : _boxName + (_boxFull ? " (penuh)" : ""));
             txtPerBox.Text = (_current?.BoxesRequired ?? 0).ToString();
             txtPallet.Text = "Pallet: " + _palletCount;
 

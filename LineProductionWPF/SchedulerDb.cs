@@ -43,6 +43,7 @@ namespace LineProductionWPF
 
         public DateTime? ScheduleCreatedAt { get; set; }    // schedule.created_at (null for schedules made before that column existed)
         public DateTime? LastScanAt { get; set; }           // scanned_at of the latest scan of this row
+        public string OpenBoxSerial { get; set; } = "";     // name of the box that is being filled now ("" = no open box / no name)
 
         // shown in the job table
         public int Count { get; set; }
@@ -93,6 +94,7 @@ namespace LineProductionWPF
         public string Message { get; init; } = "";
         public int CompletedBoxes { get; init; }    // closed boxes of the job after this scan
         public int ScansInOpenBox { get; init; }    // scans in the still-open box (0 right after a box closed)
+        public string BoxSerial { get; init; } = "";   // name of the box THIS scan went into (also when it just closed), "" if it has none
         public bool Saved => Outcome == ScanOutcome.Saved;
     }
 
@@ -220,7 +222,9 @@ namespace LineProductionWPF
                 "       (SELECT COUNT(*) FROM sticker_scan c JOIN dbo.box b ON b.id = c.box_id WHERE b.tanggal = it.tanggal " +
                 "          AND b.line_production_id = it.line_production_id AND b.barcode = it.barcode AND b.closed_at IS NULL), " +
                 "       p.customer, " +
-                "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at " +
+                "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at, " +
+                "       (SELECT TOP (1) b.serial FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
+                "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC) " +
                 "FROM items it " +
                 "LEFT JOIN product p ON p.barcode = it.barcode " +
                 "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
@@ -261,7 +265,8 @@ namespace LineProductionWPF
                     SameBarcodeRows = sameRows,
                     BarcodeTotalJumlah = r.GetInt32(17),
                     ScheduleCreatedAt = r.IsDBNull(18) ? null : r.GetDateTime(18),
-                    LastScanAt = r.IsDBNull(19) ? null : r.GetDateTime(19)
+                    LastScanAt = r.IsDBNull(19) ? null : r.GetDateTime(19),
+                    OpenBoxSerial = r.IsDBNull(20) ? "" : r.GetString(20)
                 });
             }
             return list;
@@ -480,6 +485,14 @@ namespace LineProductionWPF
                     completedBoxes = Convert.ToInt32(cmd.ExecuteScalar());
                 }
 
+                string boxSerial = "";
+                using (var cmd = Command(con, tx, "SELECT serial FROM dbo.box WHERE id = @box"))
+                {
+                    cmd.Parameters.AddWithValue("@box", boxId);
+                    object? v = cmd.ExecuteScalar();
+                    if (v != null && v != DBNull.Value) boxSerial = Convert.ToString(v) ?? "";
+                }
+
                 tx.Commit();
 
                 int scansInOpenBox = closeBox ? 0 : scansInBox;
@@ -489,7 +502,8 @@ namespace LineProductionWPF
                     Outcome = ScanOutcome.Saved,
                     Message = "Scan tersimpan. Box " + boxNumber + ": " + scansInBox + "/" + qtyPerBox + ".",
                     CompletedBoxes = completedBoxes,
-                    ScansInOpenBox = scansInOpenBox
+                    ScansInOpenBox = scansInOpenBox,
+                    BoxSerial = boxSerial
                 };
             }
             catch (SqlException ex) when (ex.Number == 2601 || ex.Number == 2627)
