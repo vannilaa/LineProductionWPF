@@ -342,6 +342,11 @@ namespace LineProductionWPF
                 if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && result.CompletedBoxes % BoxesPerPallet == 0)
                     ShowPalletFull();
 
+                // A box was just completed: empty the list on screen so the next box starts with a clean list.
+                // Only the visible list is cleared; _allScanned (the "already scanned this session" check) is kept.
+                if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0)
+                    _scans.Clear();
+
                 txtStatus.Text = result.Message;
                 UpdateScanCounters();
             }
