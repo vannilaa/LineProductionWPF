@@ -268,15 +268,28 @@ namespace LineProductionWPF
             ApplyStatusStyle(true);
         }
 
-        // Light yellow on the dark footer for the notice, the normal grey on white otherwise. The footer is white, where light
-        // yellow text can hardly be read, so the footer turns dark (the colour of the window) while the notice is shown.
-        private static readonly Brush NoticeText = new SolidColorBrush(Color.FromRgb(0xFF, 0xF5, 0x9D));
-        private static readonly Brush NormalText = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
+        // The footer stays white. The notice is dark text on a light yellow highlight (like a highlighter pen); the normal
+        // status text is grey without highlight. Only colours, weight and a little side padding change, so nothing moves vertically.
+        private static readonly Brush NoticeBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF5, 0x9D));   // light yellow
+        private static readonly Brush NoticeText = new SolidColorBrush(Color.FromRgb(0x1F, 0x29, 0x37));         // near black
+        private static readonly Brush NormalText = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));         // grey (as in the XAML)
 
         private void ApplyStatusStyle(bool notice)
         {
-            txtStatus.Foreground = notice ? NoticeText : NormalText;
-            footerBar.Background = notice ? Brushes.DarkSlateGray : Brushes.White;
+            if (notice)
+            {
+                txtStatus.Background = NoticeBackground;
+                txtStatus.Foreground = NoticeText;
+                txtStatus.FontWeight = FontWeights.SemiBold;
+                txtStatus.Padding = new Thickness(8, 0, 8, 0);
+            }
+            else
+            {
+                txtStatus.ClearValue(TextBlock.BackgroundProperty);
+                txtStatus.Foreground = NormalText;
+                txtStatus.ClearValue(TextBlock.FontWeightProperty);
+                txtStatus.ClearValue(TextBlock.PaddingProperty);
+            }
         }
 
         /// <summary>The notice ran out: normal colours again (the next read puts "Data diperbarui" back).</summary>
