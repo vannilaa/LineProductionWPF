@@ -35,6 +35,14 @@ namespace LineProductionWPF
         private DateTime _lastRead = DateTime.MinValue;
         private bool _reading;
 
+        // ---- schedule revision notice (footer) ----
+        // DailyScheduler adds 1 to schedule.version with every edit. When a database read shows another version than the
+        // one this screen already has, the schedule was revised: the boards follow by themselves (they re-read every
+        // few seconds), the notice only tells the operator. 0 = no schedule read yet for this line + day.
+        private static readonly TimeSpan RevisionNoticeFor = TimeSpan.FromMinutes(10);   // the notice goes away by itself after this
+        private int _knownVersion;
+        private DateTime _revisionNoticeAt = DateTime.MinValue;   // when the notice was raised (MinValue = no notice)
+
         // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
         private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
@@ -124,6 +132,7 @@ namespace LineProductionWPF
             _tracker.Open(_date, line.Id);
             UpdatePauseButton();
             ResetScanPanel();
+            ClearRevisionNotice();           // another line: its own version, and no old notice
             _lastRead = DateTime.MinValue;   // read right away
             Tick();
         }
@@ -133,12 +142,17 @@ namespace LineProductionWPF
         {
             UpdateClock();
 
+            // the revision notice goes away by itself (or earlier by a click)
+            if (_revisionNoticeAt != DateTime.MinValue && DateTime.Now - _revisionNoticeAt >= RevisionNoticeFor)
+                HideRevisionNotice();
+
             if (_line != null && _date != DateTime.Today)   // midnight: a new day, a new schedule
             {
                 _date = DateTime.Today;
                 _jobs = new List<KanbanJob>();
                 _tracker.Open(_date, _line.Id);
                 UpdatePauseButton();
+                ClearRevisionNotice();           // a new day has its own schedule
                 _lastRead = DateTime.MinValue;
             }
 
@@ -155,6 +169,7 @@ namespace LineProductionWPF
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
+                        CheckRevision(date, line, jobs);
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
                         // otherwise the read is older than the panel.
                         _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;
@@ -174,6 +189,77 @@ namespace LineProductionWPF
             }
 
             Render();
+        }
+
+        // ---------- schedule revision notice ----------
+        private int _noticeFrom, _noticeTo;   // the versions the notice is about
+
+        /// <summary>Compares the schedule version of this read with the one already on screen; a difference = DailyScheduler saved a revision.</summary>
+        private void CheckRevision(DateTime date, KanbanLine line, List<KanbanJob> jobs)
+        {
+            if (jobs.Count == 0) return;   // no schedule (yet): nothing to compare
+
+            int version = jobs[0].ScheduleVersion;
+            if (_knownVersion == 0)        // first read of this line + day: this is the baseline, not a revision
+            {
+                _knownVersion = version;
+                return;
+            }
+            if (version == _knownVersion) return;
+
+            _noticeFrom = _knownVersion;
+            _noticeTo = version;
+            _knownVersion = version;
+            _revisionNoticeAt = DateTime.Now;
+            ShowRevisionNotice(null);
+
+            // Reason and PC of the edit are a bonus: the notice is already on screen without them.
+            _ = LoadRevisionDetail(date, line, version);
+        }
+
+        private async Task LoadRevisionDetail(DateTime date, KanbanLine line, int version)
+        {
+            var revision = await Task.Run(() => SchedulerDb.LoadLatestRevision(date, line.Id));
+            // Skip when it is no longer about what is on screen (other line / day, another revision since, notice closed).
+            if (revision == null || !ReferenceEquals(line, _line) || date != _date || _noticeTo != version
+                || _revisionNoticeAt == DateTime.MinValue)
+                return;
+            ShowRevisionNotice(revision);
+        }
+
+        private void ShowRevisionNotice(SchedulerDb.ScheduleRevision? revision)
+        {
+            string time = (revision?.EditedAt ?? _revisionNoticeAt).ToString("HH:mm", CultureInfo.InvariantCulture);
+            string text = "JADWAL DIREVISI (versi " + _noticeFrom + " → " + _noticeTo + ") pukul " + time;
+            if (revision != null)
+            {
+                if (revision.Reason.Length > 0) text += " – " + revision.Reason;
+                if (revision.Machine.Length > 0) text += " (oleh " + revision.Machine + ")";
+            }
+            text += ". Layar sudah memakai jadwal terbaru.";
+
+            txtRevision.Text = text;
+            revisionBanner.Visibility = Visibility.Visible;
+        }
+
+        private void HideRevisionNotice()
+        {
+            _revisionNoticeAt = DateTime.MinValue;
+            revisionBanner.Visibility = Visibility.Collapsed;
+        }
+
+        /// <summary>Another line or another day: forget the version (the next read is the new baseline) and close any notice.</summary>
+        private void ClearRevisionNotice()
+        {
+            _knownVersion = 0;
+            HideRevisionNotice();
+        }
+
+        // Click on the notice = the operator has seen it. Focus goes back to the scan box so scanning continues.
+        private void revisionBanner_Click(object sender, MouseButtonEventArgs e)
+        {
+            HideRevisionNotice();
+            txtScan.Focus();
         }
 
         // "Jeda Counter" pauses the expected count (target_per_jam x time); the same button then reads "Lanjut Counter".

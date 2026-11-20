@@ -45,6 +45,7 @@ namespace LineProductionWPF
         public int BarcodeTotalJumlah { get; set; }         // planned quantity of ALL rows with this barcode
 
         public DateTime? ScheduleCreatedAt { get; set; }    // schedule.created_at (null for schedules made before that column existed)
+        public int ScheduleVersion { get; set; }            // schedule.version: 1 when created, +1 with every edit in DailyScheduler (same for every job of a schedule)
         public DateTime? LastScanAt { get; set; }           // scanned_at of the latest scan of this row
         public string OpenBoxSerial { get; set; } = "";     // name of the box that is being filled now ("" = no open box / no name)
 
@@ -235,7 +236,7 @@ namespace LineProductionWPF
             // its stickers, as before. Boxes stay per barcode (ASSUMPTION, see RecordStickerScan).
             cmd.CommandText =
                 "WITH items AS ( " +
-                "  SELECT i.urutan, i.barcode, i.jumlah, s.tanggal, s.line_production_id, s.created_at, " +
+                "  SELECT i.urutan, i.barcode, i.jumlah, s.tanggal, s.line_production_id, s.created_at, s.version, " +
                 "         SUM(i.jumlah) OVER (PARTITION BY i.barcode ORDER BY i.urutan ROWS UNBOUNDED PRECEDING) - i.jumlah AS first_off, " +
                 "         CAST(ROW_NUMBER() OVER (PARTITION BY i.barcode ORDER BY i.urutan) AS INT) AS occurrence, " +
                 "         COUNT(*) OVER (PARTITION BY i.barcode) AS same_rows, " +
@@ -254,7 +255,8 @@ namespace LineProductionWPF
                 "       p.customer, " +
                 "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at, " +
                 "       (SELECT TOP (1) b.serial FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
-                "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC) " +
+                "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC), " +
+                "       it.version " +
                 "FROM items it " +
                 "LEFT JOIN product p ON p.barcode = it.barcode " +
                 "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
@@ -296,10 +298,44 @@ namespace LineProductionWPF
                     BarcodeTotalJumlah = r.GetInt32(17),
                     ScheduleCreatedAt = r.IsDBNull(18) ? null : r.GetDateTime(18),
                     LastScanAt = r.IsDBNull(19) ? null : r.GetDateTime(19),
-                    OpenBoxSerial = r.IsDBNull(20) ? "" : r.GetString(20)
+                    OpenBoxSerial = r.IsDBNull(20) ? "" : r.GetString(20),
+                    ScheduleVersion = r.GetInt32(21)
                 });
             }
             return list;
+        }
+
+        /// <summary>Who made the latest edit of this schedule and why (table schedule_edit of DailyScheduler).</summary>
+        public sealed record ScheduleRevision(DateTime EditedAt, string Reason, string Machine);
+
+        /// <summary>
+        /// The latest edit record of the schedule of this date + line, or null when there is none or it cannot be read.
+        /// Only used for the revision notice, which also works without it, so a failure here (for example the database user
+        /// has no SELECT permission on schedule_edit) is swallowed on purpose.
+        /// </summary>
+        public static ScheduleRevision? LoadLatestRevision(DateTime tanggal, int lineProductionId)
+        {
+            try
+            {
+                using var con = new SqlConnection(ConnectionString);
+                con.Open();
+                using var cmd = con.CreateCommand();
+                cmd.CommandText =
+                    "SELECT TOP (1) e.edited_at, e.reason, e.machine_name " +
+                    "FROM schedule_edit e JOIN schedule s ON s.id = e.schedule_id " +
+                    "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp " +
+                    "ORDER BY e.version_no DESC";
+                cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+                cmd.Parameters.AddWithValue("@lp", lineProductionId);
+                cmd.CommandTimeout = 10;
+                using var r = cmd.ExecuteReader();
+                if (!r.Read()) return null;
+                return new ScheduleRevision(r.GetDateTime(0), r.IsDBNull(1) ? "" : r.GetString(1).Trim(), r.IsDBNull(2) ? "" : r.GetString(2).Trim());
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static SqlCommand Command(SqlConnection con, SqlTransaction tx, string sql)

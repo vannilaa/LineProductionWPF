@@ -474,10 +474,21 @@
         <!-- ================= FOOTER ================= -->
         <Border Grid.Row="3" Background="White" Padding="24,8">
             <Grid>
-                <TextBlock x:Name="txtStatus" VerticalAlignment="Center" FontSize="16" Foreground="#6B7280"
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>   <!-- schedule revision notice (hidden until a revision is detected) -->
+                    <RowDefinition Height="Auto"/>   <!-- status text -->
+                </Grid.RowDefinitions>
+                <Border x:Name="revisionBanner" Grid.Row="0" Visibility="Collapsed" Margin="0,0,180,6" Padding="10,6"
+                        Background="#FEF3C7" BorderBrush="#F59E0B" BorderThickness="1" CornerRadius="4"
+                        Cursor="Hand" ToolTip="Klik untuk menutup pemberitahuan ini"
+                        MouseLeftButtonUp="revisionBanner_Click">
+                    <TextBlock x:Name="txtRevision" FontSize="16" FontWeight="SemiBold" Foreground="#92400E"
+                               TextWrapping="Wrap"/>
+                </Border>
+                <TextBlock x:Name="txtStatus" Grid.Row="1" VerticalAlignment="Center" FontSize="16" Foreground="#6B7280"
                            TextWrapping="Wrap" Margin="0,0,180,0"/>
-                <Button x:Name="btnKeluar" Content="KELUAR" Style="{StaticResource ExitButton}"
-                        HorizontalAlignment="Right" Click="btnKeluar_Click"/>
+                <Button x:Name="btnKeluar" Grid.RowSpan="2" Content="KELUAR" Style="{StaticResource ExitButton}"
+                        HorizontalAlignment="Right" VerticalAlignment="Center" Click="btnKeluar_Click"/>
             </Grid>
         </Border>
     </Grid>
