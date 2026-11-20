@@ -17,6 +17,13 @@
     </None>
   </ItemGroup>
 
+  <!-- Sounds for a saved scan / a completed box (Sounds\*.wav) are copied next to the .exe -->
+  <ItemGroup>
+    <None Update="Sounds\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />

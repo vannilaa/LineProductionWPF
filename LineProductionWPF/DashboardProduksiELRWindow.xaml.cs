@@ -65,6 +65,11 @@ namespace LineProductionWPF
         {
             Interval = TimeSpan.FromSeconds(1)
         };
+        // Green flash of the "SCAN per BOX" text when a scan was saved (stronger and longer when it completed a box).
+        // It only changes a colour, so nothing in the panel moves.
+        private readonly DispatcherTimer _scanFlashTimer = new DispatcherTimer();
+        private static readonly Brush ScanFlashBrush = new SolidColorBrush(Color.FromRgb(0xBB, 0xF7, 0xD0));      // light green
+        private static readonly Brush BoxFullFlashBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));   // stronger green
         private int ScanPerBox => _current != null && _current.QtyPerBox > 0 ? _current.QtyPerBox : 1;
         private int BoxesPerPallet => DefaultBoxesPerPallet;
         private int BoxesCompleted => _palletCount * BoxesPerPallet + _boxCount;
@@ -91,6 +96,8 @@ namespace LineProductionWPF
                 _clearListTimer.Stop();
                 _scans.Clear();
             };
+
+            _scanFlashTimer.Tick += (s, e) => EndScanFlash();
 
             _clockTimer.Interval = TimeSpan.FromSeconds(1);
             _clockTimer.Tick += (s, e) => Tick();
@@ -370,8 +377,23 @@ namespace LineProductionWPF
             imgCustomerLogo.Visibility = logo == null ? Visibility.Collapsed : Visibility.Visible;
         }
 
+        private void FlashScan(bool boxClosed)
+        {
+            txtScanPerBox.Background = boxClosed ? BoxFullFlashBrush : ScanFlashBrush;
+            _scanFlashTimer.Stop();
+            _scanFlashTimer.Interval = TimeSpan.FromMilliseconds(boxClosed ? 1500 : 700);
+            _scanFlashTimer.Start();   // restarts the wait: a quick next scan flashes again
+        }
+
+        private void EndScanFlash()
+        {
+            _scanFlashTimer.Stop();
+            txtScanPerBox.ClearValue(TextBlock.BackgroundProperty);
+        }
+
         private void ResetScanPanel()
         {
+            EndScanFlash();
             _holdTimer.Stop();
             _clearListTimer.Stop();
             txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4));
@@ -453,6 +475,11 @@ namespace LineProductionWPF
                 _scanVersion++;
                 _lastRead = DateTime.MinValue;   // refresh the actual production count right away
 
+                // The scan is SAVED (the database said so): tell the operator, also when the panel has moved on to another job.
+                bool boxClosed = result.ScansInOpenBox == 0 && result.CompletedBoxes > 0;
+                if (boxClosed) ScanSounds.PlayBoxFull();
+                else ScanSounds.PlaySaved();
+
                 // The job may have changed during the database call: the scan is saved, but this panel is another job's.
                 if (!IsActive(p)) return;
 
@@ -487,6 +514,7 @@ namespace LineProductionWPF
 
                 txtStatus.Text = result.Message;
                 UpdateScanCounters();
+                FlashScan(boxClosed);
             }
             catch (Exception ex)
             {
