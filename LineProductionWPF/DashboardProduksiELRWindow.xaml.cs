@@ -509,7 +509,7 @@ namespace LineProductionWPF
             scale.ScaleX = scale.ScaleY = s;
             rootGrid.Width = host.Width / s;
             rootGrid.Height = host.Height / s;
-            if (_web?.CoreWebView2 != null) _web.ZoomFactor = s;   // the web tab is a native window: it does not follow the transform
+            if (_web?.CoreWebView2 != null) _web.ZoomFactor = WebZoom * s;   // the web tab is a native window: it does not follow the transform, so zoom it by the same scale
         }
 
         // The WebView2 is a native window, so it cannot live inside the scaled tree (its window would keep the unscaled size).
@@ -675,7 +675,7 @@ namespace LineProductionWPF
                 if (a.IsSuccess)
                 {
                     txtWebInfo.Visibility = Visibility.Collapsed;
-                    web.ZoomFactor = WebZoom;   // keep 75 % after every page load
+                    web.ZoomFactor = WebZoom * scale.ScaleX;   // keep 75 % (times the UI scale) after every page load
                 }
                 else if (a.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled)   // "canceled" = a newer address replaced this one
                 {
@@ -693,7 +693,7 @@ namespace LineProductionWPF
                 ScheduleWebRetry();
             };
 
-            web.ZoomFactor = WebZoom;
+            web.ZoomFactor = WebZoom * scale.ScaleX;
         }
 
         private async Task ShowWebAsync()
