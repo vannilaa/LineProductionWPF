@@ -67,6 +67,8 @@ namespace LineProductionWPF
         public DashboardProduksiELRWindow()
         {
             InitializeComponent();
+            webHost.LayoutUpdated += (s, e) => UpdateWebBounds();
+            webHost.IsVisibleChanged += (s, e) => UpdateWebBounds();
             lstScans.ItemsSource = _scans;
 
             _popupTimer.Tick += (s, e) => CloseScanPopup();
@@ -510,6 +512,31 @@ namespace LineProductionWPF
             if (_web?.CoreWebView2 != null) _web.ZoomFactor = s;   // the web tab is a native window: it does not follow the transform
         }
 
+        // The WebView2 is a native window, so it cannot live inside the scaled tree (its window would keep the unscaled size).
+        // It sits in fitHost (not scaled) on top of the webHost placeholder and is moved / sized to cover exactly the
+        // placeholder's on-screen rectangle. It is hidden whenever the web tab is not showing.
+        private Rect _webRect = Rect.Empty;
+
+        private void UpdateWebBounds()
+        {
+            if (_web == null) return;
+            try
+            {
+                bool show = webHost.IsVisible && webHost.ActualWidth > 0 && webHost.ActualHeight > 0;
+                var vis = show ? Visibility.Visible : Visibility.Collapsed;
+                if (_web.Visibility != vis) _web.Visibility = vis;
+                if (!show) return;
+
+                Rect r = webHost.TransformToAncestor(fitHost).TransformBounds(new Rect(0, 0, webHost.ActualWidth, webHost.ActualHeight));
+                if (r == _webRect) return;   // unchanged: do not trigger another layout pass
+                _webRect = r;
+                _web.Margin = new Thickness(Math.Round(r.X), Math.Round(r.Y), 0, 0);
+                _web.Width = Math.Round(r.Width);
+                _web.Height = Math.Round(r.Height);
+            }
+            catch (InvalidOperationException) { }   // placeholder not connected to the window yet
+        }
+
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
             ApplyFit(new Size(fitHost.ActualWidth, fitHost.ActualHeight));
@@ -586,7 +613,8 @@ namespace LineProductionWPF
         {
             if (_web != null)
             {
-                try { webHost.Children.Remove(_web); } catch { }
+                try { fitHost.Children.Remove(_web); } catch { }
+                _webRect = Rect.Empty;
                 try { _web.Dispose(); } catch { }
                 _web = null;
             }
@@ -606,8 +634,12 @@ namespace LineProductionWPF
                     UserDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LineProductionWPF", "WebView2")
                 }
             };
+            web.HorizontalAlignment = HorizontalAlignment.Left;   // positioned by UpdateWebBounds (Margin + Width + Height)
+            web.VerticalAlignment = VerticalAlignment.Top;
+            web.Visibility = Visibility.Collapsed;                // shown once it has been placed over webHost
             _web = web;
-            webHost.Children.Add(web);
+            fitHost.Children.Add(web);
+            UpdateWebBounds();
             await web.EnsureCoreWebView2Async();
             ApplyFit(new Size(fitHost.ActualWidth, fitHost.ActualHeight));   // match the web page zoom to the UI scale
 
