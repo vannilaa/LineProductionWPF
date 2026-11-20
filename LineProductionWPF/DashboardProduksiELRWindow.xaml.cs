@@ -35,14 +35,6 @@ namespace LineProductionWPF
         private DateTime _lastRead = DateTime.MinValue;
         private bool _reading;
 
-        // ---- schedule revision notice (footer) ----
-        // DailyScheduler adds 1 to schedule.version with every edit. When a database read shows another version than the
-        // one this screen already has, the schedule was revised: the boards follow by themselves (they re-read every
-        // few seconds), the notice only tells the operator. 0 = no schedule read yet for this line + day.
-        private static readonly TimeSpan RevisionNoticeFor = TimeSpan.FromMinutes(10);   // the notice goes away by itself after this
-        private int _knownVersion;
-        private DateTime _revisionNoticeAt = DateTime.MinValue;   // when the notice was raised (MinValue = no notice)
-
         // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
         private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
@@ -65,11 +57,6 @@ namespace LineProductionWPF
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        // Green flash of the "SCAN per BOX" text when a scan was saved (stronger and longer when it completed a box).
-        // It only changes a colour, so nothing in the panel moves.
-        private readonly DispatcherTimer _scanFlashTimer = new DispatcherTimer();
-        private static readonly Brush ScanFlashBrush = new SolidColorBrush(Color.FromRgb(0xBB, 0xF7, 0xD0));      // light green
-        private static readonly Brush BoxFullFlashBrush = new SolidColorBrush(Color.FromRgb(0x4A, 0xDE, 0x80));   // stronger green
         private int ScanPerBox => _current != null && _current.QtyPerBox > 0 ? _current.QtyPerBox : 1;
         private int BoxesPerPallet => DefaultBoxesPerPallet;
         private int BoxesCompleted => _palletCount * BoxesPerPallet + _boxCount;
@@ -96,8 +83,6 @@ namespace LineProductionWPF
                 _clearListTimer.Stop();
                 _scans.Clear();
             };
-
-            _scanFlashTimer.Tick += (s, e) => EndScanFlash();
 
             _clockTimer.Interval = TimeSpan.FromSeconds(1);
             _clockTimer.Tick += (s, e) => Tick();
@@ -139,7 +124,6 @@ namespace LineProductionWPF
             _tracker.Open(_date, line.Id);
             UpdatePauseButton();
             ResetScanPanel();
-            ClearRevisionNotice();           // another line: its own version, and no old notice
             _lastRead = DateTime.MinValue;   // read right away
             Tick();
         }
@@ -149,20 +133,12 @@ namespace LineProductionWPF
         {
             UpdateClock();
 
-            // the revision notice goes away by itself: the footer goes back to "Data diperbarui" after RevisionNoticeFor
-            if (_revisionNoticeAt != DateTime.MinValue && DateTime.Now - _revisionNoticeAt >= RevisionNoticeFor)
-            {
-                HideRevisionNotice();
-                _lastRead = DateTime.MinValue;   // read now, so the footer text is replaced right away
-            }
-
             if (_line != null && _date != DateTime.Today)   // midnight: a new day, a new schedule
             {
                 _date = DateTime.Today;
                 _jobs = new List<KanbanJob>();
                 _tracker.Open(_date, _line.Id);
                 UpdatePauseButton();
-                ClearRevisionNotice();           // a new day has its own schedule
                 _lastRead = DateTime.MinValue;
             }
 
@@ -179,26 +155,12 @@ namespace LineProductionWPF
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
-                        CheckRevision(date, line, jobs);
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
                         // otherwise the read is older than the panel.
                         _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;
-                        if (jobs.Count == 0)
-                        {
-                            txtStatus.Text = "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + ".";
-                            ApplyStatusStyle(false);
-                        }
-                        else if (_revisionNoticeAt != DateTime.MinValue)
-                        {
-                            // a revision was detected: the notice takes the place of "Data diperbarui" for a while
-                            txtStatus.Text = _noticeText;
-                            ApplyStatusStyle(true);
-                        }
-                        else
-                        {
-                            txtStatus.Text = "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
-                            ApplyStatusStyle(false);
-                        }
+                        txtStatus.Text = jobs.Count == 0
+                            ? "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
+                            : "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
                     }
                 }
                 catch (Exception ex)
@@ -212,100 +174,6 @@ namespace LineProductionWPF
             }
 
             Render();
-        }
-
-        // ---------- schedule revision notice ----------
-        private int _noticeFrom, _noticeTo;   // the versions the notice is about
-        private string _noticeText = "";      // what the footer shows while the notice is active
-
-        /// <summary>Compares the schedule version of this read with the one already on screen; a difference = DailyScheduler saved a revision.</summary>
-        private void CheckRevision(DateTime date, KanbanLine line, List<KanbanJob> jobs)
-        {
-            if (jobs.Count == 0) return;   // no schedule (yet): nothing to compare
-
-            int version = jobs[0].ScheduleVersion;
-            if (_knownVersion == 0)        // first read of this line + day: this is the baseline, not a revision
-            {
-                _knownVersion = version;
-                return;
-            }
-            if (version == _knownVersion) return;
-
-            _noticeFrom = _knownVersion;
-            _noticeTo = version;
-            _knownVersion = version;
-            _revisionNoticeAt = DateTime.Now;
-            ShowRevisionNotice(null);
-            System.Media.SystemSounds.Exclamation.Play();   // not the same sound as a rejected scan (Beep)
-
-            // Reason and PC of the edit are a bonus: the notice is already on screen without them.
-            _ = LoadRevisionDetail(date, line, version);
-        }
-
-        private async Task LoadRevisionDetail(DateTime date, KanbanLine line, int version)
-        {
-            var revision = await Task.Run(() => SchedulerDb.LoadLatestRevision(date, line.Id));
-            // Skip when it is no longer about what is on screen (other line / day, another revision since, notice closed).
-            if (revision == null || !ReferenceEquals(line, _line) || date != _date || _noticeTo != version
-                || _revisionNoticeAt == DateTime.MinValue)
-                return;
-            ShowRevisionNotice(revision);
-        }
-
-        /// <summary>Builds the notice text and puts it in the footer line (the one that normally says "Data diperbarui").</summary>
-        private void ShowRevisionNotice(SchedulerDb.ScheduleRevision? revision)
-        {
-            string time = (revision?.EditedAt ?? _revisionNoticeAt).ToString("HH:mm", CultureInfo.InvariantCulture);
-            // one field per part, set apart by a bullet: JADWAL DIREVISI • Versi 5 → 6 • 11:21 • reason • oleh PC
-            const string sep = "   •   ";
-            string text = "JADWAL DIREVISI" + sep + "Versi " + _noticeFrom + " → " + _noticeTo + sep + time;
-            if (revision != null)
-            {
-                if (revision.Reason.Length > 0) text += sep + revision.Reason;
-                if (revision.Machine.Length > 0) text += sep + "oleh " + revision.Machine;
-            }
-
-            _noticeText = text;
-            txtStatus.Text = text;
-            ApplyStatusStyle(true);
-        }
-
-        // The footer stays white. The notice is dark text on a light yellow bar (the Border around the status text, as high as the
-        // KELUAR button); the normal status text is grey without a bar. Only colours, weight and side padding change.
-        private static readonly Brush NoticeBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF5, 0x9D));   // light yellow
-        private static readonly Brush NoticeText = new SolidColorBrush(Color.FromRgb(0x1F, 0x29, 0x37));         // near black
-        private static readonly Brush NormalText = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));         // grey (as in the XAML)
-
-        private void ApplyStatusStyle(bool notice)
-        {
-            if (notice)
-            {
-                statusBar.Background = NoticeBackground;
-                statusBar.Padding = new Thickness(14, 0, 14, 0);
-                txtStatus.Foreground = NoticeText;
-                txtStatus.FontWeight = FontWeights.SemiBold;
-            }
-            else
-            {
-                statusBar.ClearValue(Border.BackgroundProperty);
-                statusBar.ClearValue(Border.PaddingProperty);
-                txtStatus.Foreground = NormalText;
-                txtStatus.ClearValue(TextBlock.FontWeightProperty);
-            }
-        }
-
-        /// <summary>The notice ran out: normal colours again (the next read puts "Data diperbarui" back).</summary>
-        private void HideRevisionNotice()
-        {
-            _revisionNoticeAt = DateTime.MinValue;
-            ApplyStatusStyle(false);
-        }
-
-        /// <summary>Another line or another day: forget the version (the next read is the new baseline) and drop any notice.</summary>
-        private void ClearRevisionNotice()
-        {
-            _knownVersion = 0;
-            HideRevisionNotice();
         }
 
         // "Jeda Counter" pauses the expected count (target_per_jam x time); the same button then reads "Lanjut Counter".
@@ -392,23 +260,8 @@ namespace LineProductionWPF
             imgCustomerLogo.Visibility = logo == null ? Visibility.Collapsed : Visibility.Visible;
         }
 
-        private void FlashScan(bool boxClosed)
-        {
-            txtScanPerBox.Background = boxClosed ? BoxFullFlashBrush : ScanFlashBrush;
-            _scanFlashTimer.Stop();
-            _scanFlashTimer.Interval = TimeSpan.FromMilliseconds(boxClosed ? 1500 : 700);
-            _scanFlashTimer.Start();   // restarts the wait: a quick next scan flashes again
-        }
-
-        private void EndScanFlash()
-        {
-            _scanFlashTimer.Stop();
-            txtScanPerBox.ClearValue(TextBlock.BackgroundProperty);
-        }
-
         private void ResetScanPanel()
         {
-            EndScanFlash();
             _holdTimer.Stop();
             _clearListTimer.Stop();
             txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4));
@@ -490,11 +343,6 @@ namespace LineProductionWPF
                 _scanVersion++;
                 _lastRead = DateTime.MinValue;   // refresh the actual production count right away
 
-                // The scan is SAVED (the database said so): tell the operator, also when the panel has moved on to another job.
-                bool boxClosed = result.ScansInOpenBox == 0 && result.CompletedBoxes > 0;
-                if (boxClosed) ScanSounds.PlayBoxFull();
-                else ScanSounds.PlaySaved();
-
                 // The job may have changed during the database call: the scan is saved, but this panel is another job's.
                 if (!IsActive(p)) return;
 
@@ -529,7 +377,6 @@ namespace LineProductionWPF
 
                 txtStatus.Text = result.Message;
                 UpdateScanCounters();
-                FlashScan(boxClosed);
             }
             catch (Exception ex)
             {
@@ -645,8 +492,27 @@ namespace LineProductionWPF
         }
 
         // ---------- keep the cursor in the scan box ----------
+        // ---------- auto-fit to any screen ----------
+        // The layout is designed for 1366 x 768. The whole UI is scaled by min(width/1366, height/768) (never below MinScale),
+        // and rootGrid is given the window size divided by that scale, so the * rows/columns absorb the spare space
+        // on the other axis instead of leaving black bars.
+        private const double DesignWidth = 1366, DesignHeight = 768, MinScale = 0.7;
+
+        private void fitHost_SizeChanged(object sender, SizeChangedEventArgs e) => ApplyFit(e.NewSize);
+
+        private void ApplyFit(Size host)
+        {
+            if (host.Width <= 0 || host.Height <= 0) return;
+            double s = Math.Max(MinScale, Math.Min(host.Width / DesignWidth, host.Height / DesignHeight));
+            scale.ScaleX = scale.ScaleY = s;
+            rootGrid.Width = host.Width / s;
+            rootGrid.Height = host.Height / s;
+            if (_web?.CoreWebView2 != null) _web.ZoomFactor = s;   // the web tab is a native window: it does not follow the transform
+        }
+
         private async void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            ApplyFit(new Size(fitHost.ActualWidth, fitHost.ActualHeight));
             txtScan.Focus();
             await PickFirstLine();
         }
@@ -743,6 +609,7 @@ namespace LineProductionWPF
             _web = web;
             webHost.Children.Add(web);
             await web.EnsureCoreWebView2Async();
+            ApplyFit(new Size(fitHost.ActualWidth, fitHost.ActualHeight));   // match the web page zoom to the UI scale
 
             CoreWebView2 core = web.CoreWebView2;
             var st = core.Settings;
@@ -899,7 +766,8 @@ namespace LineProductionWPF
             var menu = new ContextMenu
             {
                 PlacementTarget = bdNomorLine,
-                Placement = PlacementMode.Bottom
+                Placement = PlacementMode.Bottom,
+                LayoutTransform = new ScaleTransform(scale.ScaleX, scale.ScaleY)   // popups live in their own window and do not inherit the UI scale
             };
 
             foreach (KanbanLine line in lines)
