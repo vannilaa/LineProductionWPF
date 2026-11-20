@@ -256,11 +256,13 @@ namespace LineProductionWPF
         private void ShowRevisionNotice(SchedulerDb.ScheduleRevision? revision)
         {
             string time = (revision?.EditedAt ?? _revisionNoticeAt).ToString("HH:mm", CultureInfo.InvariantCulture);
-            string text = "JADWAL DIREVISI (versi " + _noticeFrom + " → " + _noticeTo + ") pukul " + time;
+            // one field per part, set apart by a bullet: JADWAL DIREVISI • Versi 5 → 6 • 11:21 • reason • oleh PC
+            const string sep = "   •   ";
+            string text = "JADWAL DIREVISI" + sep + "Versi " + _noticeFrom + " → " + _noticeTo + sep + time;
             if (revision != null)
             {
-                if (revision.Reason.Length > 0) text += " – " + revision.Reason;
-                if (revision.Machine.Length > 0) text += " (oleh " + revision.Machine + ")";
+                if (revision.Reason.Length > 0) text += sep + revision.Reason;
+                if (revision.Machine.Length > 0) text += sep + "oleh " + revision.Machine;
             }
 
             _noticeText = text;
@@ -268,8 +270,8 @@ namespace LineProductionWPF
             ApplyStatusStyle(true);
         }
 
-        // The footer stays white. The notice is dark text on a light yellow highlight (like a highlighter pen); the normal
-        // status text is grey without highlight. Only colours, weight and a little side padding change, so nothing moves vertically.
+        // The footer stays white. The notice is dark text on a light yellow bar (the Border around the status text, as high as the
+        // KELUAR button); the normal status text is grey without a bar. Only colours, weight and side padding change.
         private static readonly Brush NoticeBackground = new SolidColorBrush(Color.FromRgb(0xFF, 0xF5, 0x9D));   // light yellow
         private static readonly Brush NoticeText = new SolidColorBrush(Color.FromRgb(0x1F, 0x29, 0x37));         // near black
         private static readonly Brush NormalText = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));         // grey (as in the XAML)
@@ -278,17 +280,17 @@ namespace LineProductionWPF
         {
             if (notice)
             {
-                txtStatus.Background = NoticeBackground;
+                statusBar.Background = NoticeBackground;
+                statusBar.Padding = new Thickness(14, 0, 14, 0);
                 txtStatus.Foreground = NoticeText;
                 txtStatus.FontWeight = FontWeights.SemiBold;
-                txtStatus.Padding = new Thickness(8, 0, 8, 0);
             }
             else
             {
-                txtStatus.ClearValue(TextBlock.BackgroundProperty);
+                statusBar.ClearValue(Border.BackgroundProperty);
+                statusBar.ClearValue(Border.PaddingProperty);
                 txtStatus.Foreground = NormalText;
                 txtStatus.ClearValue(TextBlock.FontWeightProperty);
-                txtStatus.ClearValue(TextBlock.PaddingProperty);
             }
         }
 

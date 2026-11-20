@@ -474,8 +474,12 @@
         <!-- ================= FOOTER ================= -->
         <Border Grid.Row="3" Background="White" Padding="24,8">
             <Grid>
-                <TextBlock x:Name="txtStatus" VerticalAlignment="Center" FontSize="16" Foreground="#6B7280"
-                           TextWrapping="Wrap" Margin="0,0,180,0"/>
+                <!-- The status text sits on a Border that stretches to the height of the KELUAR button; the schedule revision
+                     notice colours this Border yellow (set in code), so the notice bar and the button line up. -->
+                <Border x:Name="statusBar" CornerRadius="4" Margin="0,0,180,0">
+                    <TextBlock x:Name="txtStatus" VerticalAlignment="Center" FontSize="16" Foreground="#6B7280"
+                               TextWrapping="Wrap"/>
+                </Border>
                 <Button x:Name="btnKeluar" Content="KELUAR" Style="{StaticResource ExitButton}"
                         HorizontalAlignment="Right" Click="btnKeluar_Click"/>
             </Grid>
