@@ -142,9 +142,12 @@ namespace LineProductionWPF
         {
             UpdateClock();
 
-            // the revision notice goes away by itself (or earlier by a click)
+            // the revision notice goes away by itself: the footer goes back to "Data diperbarui" after RevisionNoticeFor
             if (_revisionNoticeAt != DateTime.MinValue && DateTime.Now - _revisionNoticeAt >= RevisionNoticeFor)
+            {
                 HideRevisionNotice();
+                _lastRead = DateTime.MinValue;   // read now, so the footer text is replaced right away
+            }
 
             if (_line != null && _date != DateTime.Today)   // midnight: a new day, a new schedule
             {
@@ -173,9 +176,22 @@ namespace LineProductionWPF
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
                         // otherwise the read is older than the panel.
                         _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;
-                        txtStatus.Text = jobs.Count == 0
-                            ? "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
-                            : "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                        if (jobs.Count == 0)
+                        {
+                            txtStatus.Text = "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + ".";
+                            ApplyStatusStyle(false);
+                        }
+                        else if (_revisionNoticeAt != DateTime.MinValue)
+                        {
+                            // a revision was detected: the notice takes the place of "Data diperbarui" for a while
+                            txtStatus.Text = _noticeText;
+                            ApplyStatusStyle(true);
+                        }
+                        else
+                        {
+                            txtStatus.Text = "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                            ApplyStatusStyle(false);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -193,6 +209,7 @@ namespace LineProductionWPF
 
         // ---------- schedule revision notice ----------
         private int _noticeFrom, _noticeTo;   // the versions the notice is about
+        private string _noticeText = "";      // what the footer shows while the notice is active
 
         /// <summary>Compares the schedule version of this read with the one already on screen; a difference = DailyScheduler saved a revision.</summary>
         private void CheckRevision(DateTime date, KanbanLine line, List<KanbanJob> jobs)
@@ -212,6 +229,7 @@ namespace LineProductionWPF
             _knownVersion = version;
             _revisionNoticeAt = DateTime.Now;
             ShowRevisionNotice(null);
+            System.Media.SystemSounds.Exclamation.Play();   // not the same sound as a rejected scan (Beep)
 
             // Reason and PC of the edit are a bonus: the notice is already on screen without them.
             _ = LoadRevisionDetail(date, line, version);
@@ -227,6 +245,7 @@ namespace LineProductionWPF
             ShowRevisionNotice(revision);
         }
 
+        /// <summary>Builds the notice text and puts it in the footer line (the one that normally says "Data diperbarui").</summary>
         private void ShowRevisionNotice(SchedulerDb.ScheduleRevision? revision)
         {
             string time = (revision?.EditedAt ?? _revisionNoticeAt).ToString("HH:mm", CultureInfo.InvariantCulture);
@@ -236,30 +255,35 @@ namespace LineProductionWPF
                 if (revision.Reason.Length > 0) text += " – " + revision.Reason;
                 if (revision.Machine.Length > 0) text += " (oleh " + revision.Machine + ")";
             }
-            text += ". Layar sudah memakai jadwal terbaru.";
 
-            txtRevision.Text = text;
-            revisionBanner.Visibility = Visibility.Visible;
+            _noticeText = text;
+            txtStatus.Text = text;
+            ApplyStatusStyle(true);
         }
 
+        // Light yellow on the dark footer for the notice, the normal grey on white otherwise. The footer is white, where light
+        // yellow text can hardly be read, so the footer turns dark (the colour of the window) while the notice is shown.
+        private static readonly Brush NoticeText = new SolidColorBrush(Color.FromRgb(0xFF, 0xF5, 0x9D));
+        private static readonly Brush NormalText = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
+
+        private void ApplyStatusStyle(bool notice)
+        {
+            txtStatus.Foreground = notice ? NoticeText : NormalText;
+            footerBar.Background = notice ? Brushes.DarkSlateGray : Brushes.White;
+        }
+
+        /// <summary>The notice ran out: normal colours again (the next read puts "Data diperbarui" back).</summary>
         private void HideRevisionNotice()
         {
             _revisionNoticeAt = DateTime.MinValue;
-            revisionBanner.Visibility = Visibility.Collapsed;
+            ApplyStatusStyle(false);
         }
 
-        /// <summary>Another line or another day: forget the version (the next read is the new baseline) and close any notice.</summary>
+        /// <summary>Another line or another day: forget the version (the next read is the new baseline) and drop any notice.</summary>
         private void ClearRevisionNotice()
         {
             _knownVersion = 0;
             HideRevisionNotice();
-        }
-
-        // Click on the notice = the operator has seen it. Focus goes back to the scan box so scanning continues.
-        private void revisionBanner_Click(object sender, MouseButtonEventArgs e)
-        {
-            HideRevisionNotice();
-            txtScan.Focus();
         }
 
         // "Jeda Counter" pauses the expected count (target_per_jam x time); the same button then reads "Lanjut Counter".
