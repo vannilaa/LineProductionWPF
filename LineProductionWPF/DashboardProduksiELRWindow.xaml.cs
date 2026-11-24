@@ -36,6 +36,7 @@ namespace LineProductionWPF
         private bool _reading;
         private int? _lastScheduleRevisionVersion;
         private DateTime _scheduleNoticeUntil = DateTime.MinValue;
+        private string _scheduleNoticeText = "";
 
         // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
@@ -130,6 +131,7 @@ namespace LineProductionWPF
             _jobs = new List<KanbanJob>();
             _lastScheduleRevisionVersion = null;
             _scheduleNoticeUntil = DateTime.MinValue;
+            _scheduleNoticeText = "";
             _tracker.Open(_date, line.Id);
             UpdatePauseButton();
             ResetScanPanel();
@@ -148,10 +150,13 @@ namespace LineProductionWPF
                 _jobs = new List<KanbanJob>();
                 _lastScheduleRevisionVersion = null;
                 _scheduleNoticeUntil = DateTime.MinValue;
+                _scheduleNoticeText = "";
                 _tracker.Open(_date, _line.Id);
                 UpdatePauseButton();
                 _lastRead = DateTime.MinValue;
             }
+
+            UpdateScheduleNoticeCountdown();
 
             if (_line != null && !_reading && DateTime.Now - _lastRead >= RefreshEvery)
             {
@@ -224,12 +229,35 @@ namespace LineProductionWPF
                 : "";
             string editor = string.IsNullOrWhiteSpace(revision.Machine) ? "" : " oleh " + revision.Machine;
             string reason = string.IsNullOrWhiteSpace(revision.Reason) ? "" : ": " + revision.Reason;
-            txtStatus.Text = "JADWAL DIREVISI (v" + revision.VersionNo + ")" + editedAt + editor + reason;
-            txtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
-            txtStatus.FontWeight = FontWeights.Bold;
-            _scheduleNoticeUntil = DateTime.Now.AddSeconds(15);
+            _scheduleNoticeText = "JADWAL DIREVISI (v" + revision.VersionNo + ")" + editedAt + editor + reason;
+            _scheduleNoticeUntil = DateTime.Now.AddMinutes(1);
+            UpdateScheduleNoticeCountdown();
             ScanSounds.PlayScheduleRevision();
             return true;
+        }
+
+        private void UpdateScheduleNoticeCountdown()
+        {
+            if (_scheduleNoticeText.Length == 0) return;
+
+            TimeSpan remaining = _scheduleNoticeUntil - DateTime.Now;
+            if (remaining <= TimeSpan.Zero)
+            {
+                _scheduleNoticeText = "";
+                txtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
+                txtStatus.FontWeight = FontWeights.Normal;
+                txtStatus.Text = _jobs.Count == 0
+                    ? "Belum ada jadwal untuk tanggal " + _date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
+                    : "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                return;
+            }
+
+            int seconds = (int)Math.Ceiling(remaining.TotalSeconds);
+            txtStatus.Text = _scheduleNoticeText + "  (hilang dalam " +
+                             (seconds / 60).ToString("00", CultureInfo.InvariantCulture) + ":" +
+                             (seconds % 60).ToString("00", CultureInfo.InvariantCulture) + ")";
+            txtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
+            txtStatus.FontWeight = FontWeights.Bold;
         }
 
         // "Jeda Counter" pauses the expected count (target_per_jam x time); the same button then reads "Lanjut Counter".
