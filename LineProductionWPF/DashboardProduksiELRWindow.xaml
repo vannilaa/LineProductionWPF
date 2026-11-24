@@ -113,16 +113,18 @@
             </Setter>
         </Style>
 
-        <!-- Rows: light blue, peach on every second row, blue-lilac when selected -->
+        <!-- Rows use one neutral color; the current running job is highlighted separately. -->
         <Style x:Key="GridRow" TargetType="DataGridRow">
             <Setter Property="Background" Value="#EFF6FC"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
             <Style.Triggers>
-                <Trigger Property="AlternationIndex" Value="1">
-                    <Setter Property="Background" Value="#FAEBD7"/>
-                </Trigger>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#DDE3FA"/>
-                </Trigger>
+                <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                    <Setter Property="Background" Value="#FFD966"/>
+                    <Setter Property="BorderThickness" Value="4,0,0,0"/>
+                    <Setter Property="BorderBrush" Value="#F59E0B"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -188,9 +190,9 @@
                         <ColumnDefinition Width="Auto"/>
                         <!-- line number -->
                         <ColumnDefinition Width="Auto"/>
-                        <!-- part number -->
-                        <ColumnDefinition Width="Auto"/>
-                        <!-- job no / posisi -->
+                        <!-- part number + model / job no -->
+                        <ColumnDefinition Width="150"/>
+                        <!-- posisi / part -->
                         <ColumnDefinition Width="*" MinWidth="170"/>
                         <!-- customer logo + name (takes the free space) -->
                         <ColumnDefinition Width="Auto"/>
@@ -210,13 +212,19 @@
                             <TextBlock Text=" ▼" FontSize="20" Foreground="White" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Border>
-                    <TextBlock x:Name="PartNomor" Grid.Column="1" Text="PART NOMOR"
-                           FontSize="36" FontWeight="Bold" Margin="5,0"
-                           VerticalAlignment="Center"/>
+                    <StackPanel Grid.Column="1" Margin="5,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="PartNomor" Text="PART NOMOR"
+                               FontSize="36" FontWeight="Bold"/>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="Model" Text="MODEL" Style="{StaticResource HeaderSub}"/>
+                            <TextBlock Text=" | " Style="{StaticResource HeaderSub}"/>
+                            <TextBlock x:Name="JobNo" Text="JOB NO" Style="{StaticResource HeaderSub}"/>
+                        </StackPanel>
+                    </StackPanel>
 
                     <StackPanel Grid.Column="2" Margin="5,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="JobNo" Text="JOB NO" Style="{StaticResource HeaderSub}"/>
                         <TextBlock x:Name="Posisi" Text="POSISI" Style="{StaticResource HeaderSub}"/>
+                        <TextBlock x:Name="PartHeader" Text="PART" Style="{StaticResource HeaderSub}"/>
                     </StackPanel>
 
                     <!-- Customer of the current job: logo (hidden when there is no logo file) + name.
@@ -344,7 +352,7 @@
                         <TextBlock Grid.Row="0" Text="SCAN BARCODE/QR"/>
 
                         <TextBox x:Name="txtScan" Grid.Row="1" Height="24" Margin="0,5"
-                             KeyDown="txtScan_KeyDown"
+                             PreviewKeyDown="txtScan_KeyDown"
                              LostKeyboardFocus="txtScan_LostKeyboardFocus"/>
 
                         <!-- Inline warning (replaces the old pop-up window). Never takes focus, so scanning is not interrupted. -->
@@ -391,13 +399,19 @@
                               GridLinesVisibility="None"
                               Background="Aquamarine" BorderThickness="0"
                               MinRowHeight="38" FontSize="14"
-                              AlternationCount="2"
                               ColumnHeaderStyle="{StaticResource GridHeader}"
                               RowStyle="{StaticResource GridRow}"
                               CellStyle="{StaticResource GridCell}">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Urutan"      Binding="{Binding Urutan}"     Width="0.8*"/>
                                 <DataGridTextColumn Header="Part Number" Binding="{Binding PartNumber}" Width="1.7*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="1.0*">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>

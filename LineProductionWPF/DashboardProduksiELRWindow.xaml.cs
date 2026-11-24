@@ -38,6 +38,9 @@ namespace LineProductionWPF
         // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
         private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
+        private readonly List<string> _scanHistory = new List<string>();
+        private int _scanHistoryPosition;
+        private string _scanHistoryDraft = "";
         private bool _pickerOpen;
 
         // Scans are saved one at a time, in the order they were scanned, each for the job that was active when scanned.
@@ -215,6 +218,12 @@ namespace LineProductionWPF
             if (!ReferenceEquals(n.Current, _current) && (n.Current == null || _current == null || n.Current.Urutan != _current.Urutan))
                 ResetScanPanel();
             _current = n.Current;
+            foreach (KanbanJob job in _jobs)
+            {
+                job.IsCurrent = _current != null &&
+                                job.Urutan == _current.Urutan &&
+                                job.Barcode == _current.Barcode;
+            }
 
             // After a restart or a job change the panel shows what the database holds (also scans from other stations).
             if (_syncBoxProgress && _current != null)
@@ -229,8 +238,10 @@ namespace LineProductionWPF
 
             UpdateCustomer(_current?.Customer);
             PartNomor.Text = _current?.PartNumber ?? "-";
-            JobNo.Text = _current == null ? "-" : _current.JobNo;
-            Posisi.Text = _current == null || _current.PosisiPart.Length == 0 ? "-" : _current.PosisiPart;
+            Posisi.Text = _current == null || string.IsNullOrWhiteSpace(_current.Posisi) ? "-" : _current.Posisi;
+            PartHeader.Text = _current == null || string.IsNullOrWhiteSpace(_current.Part) ? "-" : _current.Part;
+            Model.Text = _current == null || string.IsNullOrWhiteSpace(_current.Model) ? "-" : _current.Model;
+            JobNo.Text = _current == null || string.IsNullOrWhiteSpace(_current.JobNo) ? "-" : _current.JobNo;
 
             txtTarget.Text = n.TargetJob.ToString();
             txtTargetJam.Text = n.TargetDay.ToString();
@@ -269,6 +280,9 @@ namespace LineProductionWPF
             txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4));
             _scans.Clear();
             _allScanned.Clear();
+            _scanHistory.Clear();
+            _scanHistoryPosition = 0;
+            _scanHistoryDraft = "";
             _scansInBox = _boxCount = _palletCount = 0;
             _boxName = "";
             _boxFull = false;
@@ -277,11 +291,43 @@ namespace LineProductionWPF
         // ---------- scanning ----------
         private void txtScan_KeyDown(object sender, KeyEventArgs e)
         {
+            if (e.Key == Key.Up)
+            {
+                if (_scanHistory.Count == 0) return;
+                if (_scanHistoryPosition == _scanHistory.Count)
+                    _scanHistoryDraft = txtScan.Text;
+                if (_scanHistoryPosition > 0)
+                {
+                    _scanHistoryPosition--;
+                    ShowScanHistoryItem(_scanHistory[_scanHistoryPosition]);
+                }
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.Down && _scanHistoryPosition < _scanHistory.Count)
+            {
+                _scanHistoryPosition++;
+                ShowScanHistoryItem(_scanHistoryPosition == _scanHistory.Count
+                    ? _scanHistoryDraft
+                    : _scanHistory[_scanHistoryPosition]);
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key != Key.Enter) return;
 
             string code = txtScan.Text.Trim();
             txtScan.Clear();
+            _scanHistoryPosition = _scanHistory.Count;
+            _scanHistoryDraft = "";
             if (code.Length > 0) ProcessScan(code);
+        }
+
+        private void ShowScanHistoryItem(string code)
+        {
+            txtScan.Text = code;
+            txtScan.CaretIndex = txtScan.Text.Length;
         }
 
         // Every scanned QR serial is saved against the job that was active when it was scanned.
@@ -349,6 +395,9 @@ namespace LineProductionWPF
                 if (!IsActive(p)) return;
 
                 _allScanned.Add(p.Code);
+                _scanHistory.Add(p.Code);
+                _scanHistoryPosition = _scanHistory.Count;
+                _scanHistoryDraft = "";
 
                 // The previous box's list is still on screen (held for a moment): the next scan starts the new list now.
                 if (_clearListTimer.IsEnabled)

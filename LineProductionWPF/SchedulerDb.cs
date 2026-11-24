@@ -23,6 +23,7 @@ namespace LineProductionWPF
         public string JobNo { get; set; } = "";
         public string Posisi { get; set; } = "";
         public string Part { get; set; } = "";
+        public string Model { get; set; } = "";
 
         /// <summary>Position + part, e.g. "F - COVER". Whatever is missing is left out.</summary>
         public string PosisiPart => string.Join(" - ", new[] { Posisi, Part }.Where(x => !string.IsNullOrWhiteSpace(x) && x != "-"));
@@ -52,6 +53,7 @@ namespace LineProductionWPF
         // shown in the job table
         public int Count { get; set; }
         public string Status { get; set; } = "";
+        public bool IsCurrent { get; set; }
 
         // Times (set by KanbanTracker.Calculate). Finished jobs show what really happened, the others an estimate.
         public DateTime Mulai { get; set; }                 // start
@@ -256,7 +258,7 @@ namespace LineProductionWPF
                 "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at, " +
                 "       (SELECT TOP (1) b.serial FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
                 "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC), " +
-                "       it.version " +
+                "       it.version, p.model " +
                 "FROM items it " +
                 "LEFT JOIN product p ON p.barcode = it.barcode " +
                 "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
@@ -299,7 +301,8 @@ namespace LineProductionWPF
                     ScheduleCreatedAt = r.IsDBNull(18) ? null : r.GetDateTime(18),
                     LastScanAt = r.IsDBNull(19) ? null : r.GetDateTime(19),
                     OpenBoxSerial = r.IsDBNull(20) ? "" : r.GetString(20),
-                    ScheduleVersion = r.GetInt32(21)
+                    ScheduleVersion = r.GetInt32(21),
+                    Model = r.IsDBNull(22) ? "" : r.GetString(22).Trim()
                 });
             }
             return list;
