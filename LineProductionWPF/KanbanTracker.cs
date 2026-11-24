@@ -197,8 +197,8 @@ namespace LineProductionWPF
                 job.IsProjected = !job.IsComplete;
                 // Selisih Waktu is counted in WORKING minutes: the break between the two ends is not lateness.
                 double diffSeconds = end >= plannedEnd
-                    ? -WorkCalendar.WorkSecondsWithOvertime(plannedEnd, end)
-                    : WorkCalendar.WorkSecondsWithOvertime(end, plannedEnd);
+                    ? WorkCalendar.WorkSecondsWithOvertime(plannedEnd, end)
+                    : -WorkCalendar.WorkSecondsWithOvertime(end, plannedEnd);
                 job.DiffMinutes = (int)Math.Truncate(diffSeconds / 60.0);   // under a minute counts as 0
 
                 // Say so when a time contains the break (the times are clock times; Selisih Waktu leaves the break out).
