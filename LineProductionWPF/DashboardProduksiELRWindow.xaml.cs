@@ -292,7 +292,10 @@ namespace LineProductionWPF
             Posisi.Text = _current == null || string.IsNullOrWhiteSpace(_current.Posisi) ? "-" : _current.Posisi;
             PartHeader.Text = _current == null || string.IsNullOrWhiteSpace(_current.Part) ? "-" : _current.Part;
             Model.Text = _current == null || string.IsNullOrWhiteSpace(_current.Model) ? "-" : _current.Model;
-            JobNo.Text = _current == null || string.IsNullOrWhiteSpace(_current.JobNo) ? "-" : _current.JobNo;
+            bool hasJobNo = _current != null && !string.IsNullOrWhiteSpace(_current.JobNo) && _current.JobNo != "-";
+            JobNo.Text = hasJobNo ? _current!.JobNo : "";
+            JobNo.Visibility = hasJobNo ? Visibility.Visible : Visibility.Collapsed;
+            HeaderJobSeparator.Visibility = hasJobNo ? Visibility.Visible : Visibility.Collapsed;
 
             txtTarget.Text = n.TargetJob.ToString();
             txtTargetJam.Text = n.TargetDay.ToString();

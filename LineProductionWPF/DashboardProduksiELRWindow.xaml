@@ -217,7 +217,7 @@
                                FontSize="36" FontWeight="Bold"/>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock x:Name="Model" Text="MODEL" Style="{StaticResource HeaderSub}"/>
-                            <TextBlock Text=" | " Style="{StaticResource HeaderSub}"/>
+                            <TextBlock x:Name="HeaderJobSeparator" Text=" | " Style="{StaticResource HeaderSub}"/>
                             <TextBlock x:Name="JobNo" Text="JOB NO" Style="{StaticResource HeaderSub}"/>
                         </StackPanel>
                     </StackPanel>
