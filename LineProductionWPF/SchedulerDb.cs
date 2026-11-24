@@ -308,37 +308,29 @@ namespace LineProductionWPF
             return list;
         }
 
-        /// <summary>Who made the latest edit of this schedule and why (table schedule_edit of DailyScheduler).</summary>
-        public sealed record ScheduleRevision(DateTime EditedAt, string Reason, string Machine);
+        /// <summary>The current schedule version and, when available, details of its latest edit.</summary>
+        public sealed record ScheduleRevision(int VersionNo, DateTime? EditedAt, string Reason, string Machine);
 
-        /// <summary>
-        /// The latest edit record of the schedule of this date + line, or null when there is none or it cannot be read.
-        /// Only used for the revision notice, which also works without it, so a failure here (for example the database user
-        /// has no SELECT permission on schedule_edit) is swallowed on purpose.
-        /// </summary>
+        /// <summary>The current schedule version and latest edit details of this date + line, or null if no schedule exists.</summary>
         public static ScheduleRevision? LoadLatestRevision(DateTime tanggal, int lineProductionId)
         {
-            try
-            {
-                using var con = new SqlConnection(ConnectionString);
-                con.Open();
-                using var cmd = con.CreateCommand();
-                cmd.CommandText =
-                    "SELECT TOP (1) e.edited_at, e.reason, e.machine_name " +
-                    "FROM schedule_edit e JOIN schedule s ON s.id = e.schedule_id " +
-                    "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp " +
-                    "ORDER BY e.version_no DESC";
-                cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
-                cmd.Parameters.AddWithValue("@lp", lineProductionId);
-                cmd.CommandTimeout = 10;
-                using var r = cmd.ExecuteReader();
-                if (!r.Read()) return null;
-                return new ScheduleRevision(r.GetDateTime(0), r.IsDBNull(1) ? "" : r.GetString(1).Trim(), r.IsDBNull(2) ? "" : r.GetString(2).Trim());
-            }
-            catch
-            {
-                return null;
-            }
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText =
+                "SELECT s.version, e.edited_at, e.reason, e.machine_name " +
+                "FROM schedule s " +
+                "OUTER APPLY (SELECT TOP (1) edited_at, reason, machine_name " +
+                "            FROM schedule_edit WHERE schedule_id = s.id ORDER BY version_no DESC) e " +
+                "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp";
+            cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
+            cmd.CommandTimeout = 10;
+            using var r = cmd.ExecuteReader();
+            if (!r.Read()) return null;
+            return new ScheduleRevision(r.GetInt32(0), r.IsDBNull(1) ? null : r.GetDateTime(1),
+                r.IsDBNull(2) ? "" : r.GetString(2).Trim(),
+                r.IsDBNull(3) ? "" : r.GetString(3).Trim());
         }
 
         private static SqlCommand Command(SqlConnection con, SqlTransaction tx, string sql)

@@ -36,6 +36,19 @@ namespace LineProductionWPF
         /// <summary>A scan was saved and it completed a box.</summary>
         public static void PlayBoxFull() => Play(BoxFull, SystemSounds.Asterisk);
 
+        /// <summary>A schedule was revised in DailyScheduler.</summary>
+        public static void PlayScheduleRevision()
+        {
+            try
+            {
+                SystemSounds.Exclamation.Play();
+            }
+            catch
+            {
+                // A sound problem must not interfere with schedule refresh.
+            }
+        }
+
         private static void Play(SoundPlayer? player, SystemSound fallback)
         {
             try

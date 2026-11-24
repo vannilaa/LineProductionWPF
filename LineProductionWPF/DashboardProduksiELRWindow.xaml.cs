@@ -34,6 +34,8 @@ namespace LineProductionWPF
         private KanbanJob _current;                                   // the job on the boards
         private DateTime _lastRead = DateTime.MinValue;
         private bool _reading;
+        private int? _lastScheduleRevisionVersion;
+        private DateTime _scheduleNoticeUntil = DateTime.MinValue;
 
         // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
@@ -126,6 +128,8 @@ namespace LineProductionWPF
             NomorLine.Text = line.Name;
             if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();   // web tab is open: show the new line
             _jobs = new List<KanbanJob>();
+            _lastScheduleRevisionVersion = null;
+            _scheduleNoticeUntil = DateTime.MinValue;
             _tracker.Open(_date, line.Id);
             UpdatePauseButton();
             ResetScanPanel();
@@ -142,6 +146,8 @@ namespace LineProductionWPF
             {
                 _date = DateTime.Today;
                 _jobs = new List<KanbanJob>();
+                _lastScheduleRevisionVersion = null;
+                _scheduleNoticeUntil = DateTime.MinValue;
                 _tracker.Open(_date, _line.Id);
                 UpdatePauseButton();
                 _lastRead = DateTime.MinValue;
@@ -157,15 +163,34 @@ namespace LineProductionWPF
                 try
                 {
                     var jobs = await Task.Run(() => SchedulerDb.LoadJobs(date, line.Id));
+                    SchedulerDb.ScheduleRevision? revision = null;
+                    string? revisionReadError = null;
+                    try
+                    {
+                        revision = await Task.Run(() => SchedulerDb.LoadLatestRevision(date, line.Id));
+                    }
+                    catch (Exception ex)
+                    {
+                        revisionReadError = ex.Message;
+                    }
+
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
                         // otherwise the read is older than the panel.
                         _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;
-                        txtStatus.Text = jobs.Count == 0
-                            ? "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
-                            : "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                        bool newRevision = revisionReadError == null && UpdateScheduleRevisionNotice(revision);
+                        if (!newRevision && DateTime.Now >= _scheduleNoticeUntil)
+                        {
+                            txtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80));
+                            txtStatus.FontWeight = FontWeights.Normal;
+                            txtStatus.Text = revisionReadError != null
+                                ? "Gagal memeriksa revisi jadwal: " + revisionReadError
+                                : jobs.Count == 0
+                                    ? "Belum ada jadwal untuk " + line.Name + " tanggal " + date.ToString("dd MMM yyyy", CultureInfo.InvariantCulture) + "."
+                                    : "Data diperbarui " + DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture);
+                        }
                     }
                 }
                 catch (Exception ex)
@@ -179,6 +204,32 @@ namespace LineProductionWPF
             }
 
             Render();
+        }
+
+        private bool UpdateScheduleRevisionNotice(SchedulerDb.ScheduleRevision? revision)
+        {
+            if (revision == null)
+            {
+                _lastScheduleRevisionVersion = null;
+                return false;
+            }
+
+            bool isNewRevision = _lastScheduleRevisionVersion.HasValue &&
+                                 revision.VersionNo > _lastScheduleRevisionVersion.Value;
+            _lastScheduleRevisionVersion = revision.VersionNo;
+            if (!isNewRevision) return false;
+
+            string editedAt = revision.EditedAt.HasValue
+                ? " " + revision.EditedAt.Value.ToString("HH:mm", CultureInfo.InvariantCulture)
+                : "";
+            string editor = string.IsNullOrWhiteSpace(revision.Machine) ? "" : " oleh " + revision.Machine;
+            string reason = string.IsNullOrWhiteSpace(revision.Reason) ? "" : ": " + revision.Reason;
+            txtStatus.Text = "JADWAL DIREVISI (v" + revision.VersionNo + ")" + editedAt + editor + reason;
+            txtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
+            txtStatus.FontWeight = FontWeights.Bold;
+            _scheduleNoticeUntil = DateTime.Now.AddSeconds(15);
+            ScanSounds.PlayScheduleRevision();
+            return true;
         }
 
         // "Jeda Counter" pauses the expected count (target_per_jam x time); the same button then reads "Lanjut Counter".
