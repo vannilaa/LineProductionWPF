@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using System.IO;
 using System.Globalization;
 using System.Linq;
@@ -833,13 +832,11 @@ namespace LineProductionWPF
             {
                 if (_line == null)
                 {
-                    txtWebUrl.Text = "";
                     ShowWebMessage("Pilih line dulu.");
                     return;
                 }
 
                 _webWanted = SchedulerDb.BuildWebUrl(_line);   // newest request always wins
-                txtWebUrl.Text = _webWanted;
                 if (_webBusy) return;   // the running call picks up the newer address in its loop below
 
                 _webBusy = true;
@@ -866,27 +863,8 @@ namespace LineProductionWPF
             {
                 ResetWeb();
                 ShowWebMessage("Tampilan web tidak bisa dibuka (WebView2 Runtime belum terpasang?).\n" + ex.Message +
-                               "\n\nPakai tombol \"Buka di Browser\". Mencoba lagi otomatis...");
+                               "\n\nMencoba lagi otomatis...");
                 ScheduleWebRetry();
-            }
-        }
-
-        private void btnWebReload_Click(object sender, RoutedEventArgs e)
-        {
-            _webLoaded = "";
-            _ = ShowWebAsync();
-        }
-
-        private void btnWebBrowser_Click(object sender, RoutedEventArgs e)
-        {
-            if (_line == null) return;
-            try
-            {
-                Process.Start(new ProcessStartInfo(SchedulerDb.BuildWebUrl(_line)) { UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                txtStatus.Text = "Gagal membuka browser: " + ex.Message;
             }
         }
 
