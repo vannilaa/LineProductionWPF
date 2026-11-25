@@ -27,7 +27,8 @@ namespace LineProductionWPF
     ///  - Current job = first job whose scanned count is below its Jumlah (all done: the last job).
     ///  - Time is WORKING time (see WorkCalendar): breaks and time outside the shift do not count.
     ///  - The first job starts at the first working moment of the day, or when the schedule was created if that was later.
-    ///    Each later job starts when the previous job really finished (the time of its last scan in the database).
+    ///    Each later job starts when the previous job really finished (the time of its last scan in the database). A job
+    ///    added to today's schedule starts no earlier than its added_at time, matching DailyScheduler.
     ///  - Count = working seconds since the job started x pcs per hour / 3600, never above Jumlah, frozen when the job
     ///    completes. "Jeda Counter" takes the paused time out of the count (the Count board only, not the job times).
     ///  - Job times: finished = real start / end. Running = expected end from the pieces still to scan at the planned rate.
@@ -160,13 +161,19 @@ namespace LineProductionWPF
             {
                 double needSeconds = job.Target > 0 ? job.Jumlah * 3600.0 / job.Target : 0;   // working time the whole job needs
 
-                // the plan: every job on time, back to back
-                DateTime plannedStart = WorkCalendar.NextWorking(plannedCursor);
+                // A job added today starts after the previous job, but not before it was added.
+                bool addedToday = job.AddedAt.HasValue && job.AddedAt.Value.Date == _date;
+                DateTime baseline = addedToday && job.AddedAt.Value > actualCursor
+                    ? job.AddedAt.Value
+                    : actualCursor;
+
+                // The original plan stays back-to-back except that a newly added job resets its plan baseline.
+                DateTime plannedStart = WorkCalendar.NextWorking(addedToday ? baseline : plannedCursor);
                 DateTime plannedEnd = WorkCalendar.AddWorkingSeconds(plannedStart, needSeconds);
                 plannedCursor = plannedEnd;
 
                 // what really happened (finished job) or is expected (running / waiting job)
-                DateTime start = WorkCalendar.NextWorking(actualCursor);
+                DateTime start = WorkCalendar.NextWorking(baseline);
                 DateTime end;
                 bool isCurrent = current != null && ReferenceEquals(job, current);
                 if (job.IsComplete)
