@@ -6,8 +6,32 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
-	<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+	<!--<EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>-->
+	<DebugType>none</DebugType>
+	<DebugSymbols>false</DebugSymbols>
+	<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+	<AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Logos\aski.ico" />
+    <None Remove="Logos\astra-daihatsu-motor.ico" />
+    <None Remove="Logos\fujiseat-indonesia-tbina.ico" />
+    <None Remove="Logos\fujiseat-indonesia.ico" />
+    <None Remove="Logos\hino-motor-manufacturing-ind.ico" />
+    <None Remove="Logos\isuzu-astra-motor-indonesia.ico" />
+    <None Remove="Logos\kramayudha-tiga-berlian.ico" />
+    <None Remove="Logos\mekar-armada-jaya.ico" />
+    <None Remove="Logos\minda-asean-automotive.ico" />
+    <None Remove="Logos\mitsubishi-motors-kramayudha-indonesia.ico" />
+    <None Remove="Logos\pindad.ico" />
+    <None Remove="Logos\README.txt" />
+    <None Remove="Logos\toyota-motor-manufacturing-indonesia.ico" />
+    <None Remove="Logos\toyota-tsusho-indonesia.ico" />
+    <None Remove="Logos\transkon-jaya.ico" />
+    <None Remove="Sounds\box-full.wav" />
+    <None Remove="Sounds\scan-ok.wav" />
+  </ItemGroup>
 
 
   <!-- Customer logos (Logos\<customer>.ico or .png) are copied next to the .exe -->
@@ -28,6 +52,60 @@
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Logos\aski.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\astra-daihatsu-motor.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\fujiseat-indonesia-tbina.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\fujiseat-indonesia.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\hino-motor-manufacturing-ind.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\isuzu-astra-motor-indonesia.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\kramayudha-tiga-berlian.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\mekar-armada-jaya.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\minda-asean-automotive.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\mitsubishi-motors-kramayudha-indonesia.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\pindad.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\README.txt">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\toyota-motor-manufacturing-indonesia.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\toyota-tsusho-indonesia.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Logos\transkon-jaya.ico">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Sounds\box-full.wav">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
+    <Resource Include="Sounds\scan-ok.wav">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </Resource>
   </ItemGroup>
 
 </Project>
