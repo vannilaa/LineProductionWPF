@@ -1,3 +1,4 @@
 <Solution>
   <Project Path="LineProductionWPF/LineProductionWPF.csproj" />
+  <Project Path="../DailyScheduler/ProductionTime.Shared/ProductionTime.Shared.csproj" />
 </Solution>

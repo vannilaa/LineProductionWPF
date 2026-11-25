@@ -57,25 +57,26 @@ namespace LineProductionWPF
         public bool IsCurrent { get; set; }
 
         // Times (set by KanbanTracker.Calculate). Finished jobs show what really happened, the others an estimate.
-        public DateTime Mulai { get; set; }                 // start
-        public DateTime Selesai { get; set; }               // end (finished) or expected end
-        public DateTime PlannedEnd { get; set; }            // end according to the plan (every job on time, back to back)
+        public DateTime? Mulai { get; set; }               // start
+        public DateTime? Selesai { get; set; }              // end (finished) or expected end
+        public DateTime? PlannedEnd { get; set; }           // end according to the plan (every job on time, back to back)
         public bool IsProjected { get; set; }               // true = estimate (job is running or waiting)
         public string MulaiNote { get; set; } = "";         // e.g. "(setelah istirahat 12-13)"
         public string SelesaiNote { get; set; } = "";       // e.g. "(+istirahat 12-13)" or "(lewat 17:00)"
         public string DiffNote { get; set; } = "";
-        public int DiffMinutes { get; set; }                // Selesai - PlannedEnd in WORKING minutes (no break): negative = ahead of the plan, positive = adds time (late)
+        public int? DiffMinutes { get; set; }               // Selesai - PlannedEnd in WORKING minutes (no break): negative = ahead of the plan, positive = adds time (late)
 
-        public string MulaiText => Mulai.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-        public string SelesaiText => Selesai.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
-        public string DiffKind => DiffMinutes < 0 ? "Early" : DiffMinutes > 0 ? "Late" : "OnTime";
+        public string MulaiText => Mulai?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        public string SelesaiText => Selesai?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        public string DiffKind => !DiffMinutes.HasValue ? "" : DiffMinutes.Value < 0 ? "Early" : DiffMinutes.Value > 0 ? "Late" : "OnTime";
         public string DiffText
         {
             get
             {
-                if (DiffMinutes == 0) return "0 mnt";
-                string sign = DiffMinutes > 0 ? "+" : "-";
-                int abs = Math.Abs(DiffMinutes);
+                if (!DiffMinutes.HasValue) return "";
+                if (DiffMinutes.Value == 0) return "0 mnt";
+                string sign = DiffMinutes.Value > 0 ? "+" : "-";
+                int abs = Math.Abs(DiffMinutes.Value);
                 return abs < 60 ? sign + abs + " mnt" : sign + (abs / 60) + "j " + (abs % 60).ToString("00") + "m";
             }
         }
