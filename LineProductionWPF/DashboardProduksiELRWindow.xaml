@@ -421,7 +421,6 @@
                                 <DataGridTextColumn Header="Posisi + Part" Binding="{Binding PosisiPart}" Width="1.4*"/>
                                 <DataGridTextColumn Header="Jumlah"      Binding="{Binding Jumlah}"     Width="*"/>
                                 <DataGridTextColumn Header="Scan"        Binding="{Binding Discan}"     Width="*"/>
-                                <DataGridTextColumn Header="Count"       Binding="{Binding Count}"      Width="*"/>
 
                                 <!-- Start time (finished job: real; others: expected) -->
                                 <DataGridTemplateColumn Header="Mulai" Width="1.3*">
