@@ -118,6 +118,7 @@ namespace LineProductionWPF
             NomorLine.Text = line.Name;
             if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();   // web tab is open: show the new line
             _jobs = new List<KanbanJob>();
+            _terimaBoxRows.Clear();
             _lastScheduleRevisionVersion = null;
             _scheduleNoticeUntil = DateTime.MinValue;
             _scheduleNoticeText = "";
@@ -137,6 +138,7 @@ namespace LineProductionWPF
             {
                 _date = DateTime.Today;
                 _jobs = new List<KanbanJob>();
+                _terimaBoxRows.Clear();
                 _lastScheduleRevisionVersion = null;
                 _scheduleNoticeUntil = DateTime.MinValue;
                 _scheduleNoticeText = "";
@@ -157,6 +159,7 @@ namespace LineProductionWPF
                 try
                 {
                     var jobs = await Task.Run(() => SchedulerDb.LoadJobs(date, line.Id));
+                    var completedBoxes = await Task.Run(() => SchedulerDb.LoadCompletedBoxes(date, line.Id));
                     SchedulerDb.ScheduleRevision? revision = null;
                     string? revisionReadError = null;
                     try
@@ -171,6 +174,13 @@ namespace LineProductionWPF
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
+                        if (_terimaBoxRows.Count != completedBoxes.Count ||
+                            (completedBoxes.Count > 0 && _terimaBoxRows[0].BoxSerial != completedBoxes[0].BoxSerial))
+                        {
+                            _terimaBoxRows.Clear();
+                            foreach (var box in completedBoxes)
+                                _terimaBoxRows.Add(box);
+                        }
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
                         // otherwise the read is older than the panel.
                         _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;

@@ -253,6 +253,47 @@ namespace LineProductionWPF
                 ProdDate:    r.GetDateTime(8));
         }
 
+        public static List<ScannedBoxRow> LoadCompletedBoxes(DateTime tanggal, int lineProductionId)
+        {
+            var list = new List<ScannedBoxRow>();
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText =
+                "SELECT b.serial, " +
+                "       COALESCE(p.part_number_code, p.part_number, b.barcode), " +
+                "       ISNULL(p.model, N''), " +
+                "       ISNULL(p.position, N''), " +
+                "       ISNULL(p.part, N''), " +
+                "       b.closed_at " +
+                "FROM dbo.box b " +
+                "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
+                "WHERE b.tanggal = @tanggal AND b.line_production_id = @lp AND b.closed_at IS NOT NULL " +
+                "ORDER BY b.closed_at DESC, b.id DESC";
+            cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
+            cmd.CommandTimeout = 30;
+
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+            {
+                string posisi = r.GetString(3).Trim();
+                string part = r.GetString(4).Trim();
+                string posisiPart = string.Join(" - ", new[] { posisi, part }.Where(x => !string.IsNullOrWhiteSpace(x) && x != "-"));
+                DateTime closedAt = r.GetDateTime(5);
+
+                list.Add(new ScannedBoxRow
+                {
+                    BoxSerial   = r.GetString(0).Trim(),
+                    PartNumber  = r.GetString(1).Trim(),
+                    Model       = r.GetString(2).Trim(),
+                    PosisiPart  = posisiPart,
+                    JamTutupBox = closedAt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+                });
+            }
+            return list;
+        }
+
         public static List<KanbanLine> LoadLines()
         {
             var list = new List<KanbanLine>();
