@@ -219,8 +219,9 @@ namespace LineProductionWPF
                     qtyPerBox:   box.QtyPerBox,
                     boxSerial:   box.BoxSerial,
                     lineName:    box.LineName,
-                    prodDate:    box.ProdDate,
-                    askOnPaperMismatch: true);
+                    prodDate:           box.ProdDate,
+                    askOnPaperMismatch: true,
+                    qrModelPartNumber:  box.QrModelPartNumber);
 
                 if (printResult != BoxLabelPrinter.PrintResult.Printed)
                 {

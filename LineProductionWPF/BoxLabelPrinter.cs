@@ -64,7 +64,8 @@ namespace LineProductionWPF
             string boxSerial,
             string lineName,
             DateTime prodDate,
-            bool askOnPaperMismatch = false)
+            bool askOnPaperMismatch = false,
+            bool qrModelPartNumber = false)
         {
             try
             {
@@ -97,7 +98,7 @@ namespace LineProductionWPF
 
                 var visual = BuildLabel(
                     customer, model, jobNo, partNumber, productName,
-                    qtyPerBox, boxSerial, lineName, prodDate);
+                    qtyPerBox, boxSerial, lineName, prodDate, qrModelPartNumber);
 
                 // If the printer's printable area is portrait (taller than wide),
                 // rotate the 90x60mm landscape label 90° so it fills the page without top/bottom whitespace.
@@ -184,7 +185,8 @@ namespace LineProductionWPF
         private static FrameworkElement BuildLabel(
             string customer, string model, string jobNo,
             string partNumber, string productName,
-            int qtyPerBox, string boxSerial, string lineName, DateTime prodDate)
+            int qtyPerBox, string boxSerial, string lineName, DateTime prodDate,
+            bool qrModelPartNumber = false)
         {
             var borderBrush = Brushes.Black;
             const double lineThickness = 1.5;
@@ -229,10 +231,19 @@ namespace LineProductionWPF
             Grid.SetRow(customerBorder, 0);
             grid.Children.Add(customerBorder);
 
-            // ── Row 1: Model + Job No | Part Number + Product Name ───────────────
+            // ── Row 1: Model + Job No | Part Number + Product Name [| QR] ───────
             var row1 = new Grid();
-            row1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.36, GridUnitType.Star) });
-            row1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.64, GridUnitType.Star) });
+            if (qrModelPartNumber)
+            {
+                row1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.34, GridUnitType.Star) });
+                row1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.66, GridUnitType.Star) });
+                row1.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            }
+            else
+            {
+                row1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.36, GridUnitType.Star) });
+                row1.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.64, GridUnitType.Star) });
+            }
 
             var leftTopBorder = new Border
             {
@@ -274,7 +285,7 @@ namespace LineProductionWPF
             var rightTopBorder = new Border
             {
                 BorderBrush     = borderBrush,
-                BorderThickness = new Thickness(0, 0, 0, lineThickness),
+                BorderThickness = new Thickness(0, 0, qrModelPartNumber ? lineThickness : 0, lineThickness),
                 Padding         = new Thickness(4, 2, 4, 2)
             };
             var rightTopStack = new StackPanel
@@ -307,6 +318,22 @@ namespace LineProductionWPF
             rightTopBorder.Child = rightTopStack;
             Grid.SetColumn(rightTopBorder, 1);
             row1.Children.Add(rightTopBorder);
+
+            if (qrModelPartNumber)
+            {
+                var qrTopBorder = new Border
+                {
+                    BorderBrush     = borderBrush,
+                    BorderThickness = new Thickness(0, 0, 0, lineThickness),
+                    Padding         = new Thickness(2)
+                };
+                var qrElement = MakeQrBitmap($"{model.Trim()};{partNumber.Trim()}", margin: 0, QRCodeGenerator.ECCLevel.M);
+                qrElement.Width  = 48;
+                qrElement.Height = 48;
+                qrTopBorder.Child = qrElement;
+                Grid.SetColumn(qrTopBorder, 2);
+                row1.Children.Add(qrTopBorder);
+            }
 
             Grid.SetRow(row1, 1);
             grid.Children.Add(row1);

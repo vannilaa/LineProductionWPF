@@ -36,6 +36,7 @@ namespace LineProductionWPF
         public int OpenBoxScans { get; set; }    // scans in the box that is still open
         public string Customer { get; set; } = "";   // product.customer, e.g. "PT. ASTRA DAIHATSU MOTOR"
         public string ProductName { get; set; } = "";  // product.product_name, e.g. "Belt Assy, RR No.2 Seat, Outer LH"
+        public bool QrModelPartNumber { get; set; }    // product.qr_model_part_number
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
@@ -218,7 +219,8 @@ namespace LineProductionWPF
             int QtyPerBox,
             string BoxSerial,
             string LineName,
-            DateTime ProdDate);
+            DateTime ProdDate,
+            bool QrModelPartNumber);
 
         public static BoxLabelData? LoadBoxForReprint(string boxSerial, int lineProductionId)
         {
@@ -232,7 +234,8 @@ namespace LineProductionWPF
                 "SELECT TOP (1) " +
                 "  ISNULL(p.customer, N''), ISNULL(p.model, N''), ISNULL(p.job_no, N''), " +
                 "  COALESCE(p.part_number_code, p.part_number, b.barcode), ISNULL(p.product_name, N''), " +
-                "  ISNULL(b.qty_per_box, ISNULL(p.qty_per_box, 0)), b.serial, ISNULL(lp.name, N''), b.tanggal " +
+                "  ISNULL(b.qty_per_box, ISNULL(p.qty_per_box, 0)), b.serial, ISNULL(lp.name, N''), b.tanggal, " +
+                "  ISNULL(p.qr_model_part_number, 0) " +
                 "FROM dbo.box b " +
                 "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
                 "LEFT JOIN dbo.line_production lp ON lp.id = b.line_production_id " +
@@ -251,7 +254,8 @@ namespace LineProductionWPF
                 QtyPerBox:   Convert.ToInt32(r.GetValue(5)),   // works for int / smallint / decimal columns
                 BoxSerial:   r.GetString(6).Trim(),
                 LineName:    r.GetString(7).Trim(),
-                ProdDate:    r.GetDateTime(8));
+                ProdDate:    r.GetDateTime(8),
+                QrModelPartNumber: Convert.ToBoolean(r.GetValue(9)));
         }
 
         public static List<ScannedBoxRow> LoadCompletedBoxes(DateTime tanggal, int lineProductionId)
@@ -359,7 +363,7 @@ namespace LineProductionWPF
                 "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at, " +
                 "       (SELECT TOP (1) b.serial FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
                 "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC), " +
-                "       it.version, p.model, it.added_at, it.start_time, p.product_name " +
+                "       it.version, p.model, it.added_at, it.start_time, p.product_name, ISNULL(p.qr_model_part_number, 0) " +
                 "FROM items it " +
                 "LEFT JOIN product p ON p.barcode = it.barcode " +
                 "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
@@ -406,7 +410,8 @@ namespace LineProductionWPF
                     Model = r.IsDBNull(22) ? "" : r.GetString(22).Trim(),
                     AddedAt = r.IsDBNull(23) ? null : r.GetDateTime(23),
                     StartTime = r.IsDBNull(24) ? null : r.GetTimeSpan(24),
-                    ProductName = r.IsDBNull(25) ? "" : r.GetString(25).Trim()
+                    ProductName = r.IsDBNull(25) ? "" : r.GetString(25).Trim(),
+                    QrModelPartNumber = Convert.ToBoolean(r.GetValue(26))
                 });
             }
             return list;

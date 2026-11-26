@@ -499,8 +499,9 @@ namespace LineProductionWPF
                         productName:  p.Job.ProductName,
                         qtyPerBox:    p.Job.QtyPerBox,
                         boxSerial:    result.BoxSerial,
-                        lineName:     p.Line.Name,
-                        prodDate:     _date);   // schedule date = box.tanggal, same date a reprint uses
+                        lineName:          p.Line.Name,
+                        prodDate:          _date,   // schedule date = box.tanggal, same date a reprint uses
+                        qrModelPartNumber: p.Job.QrModelPartNumber);
                     autoPrintStatus = BoxLabelPrinter.Describe(printResult);
                     labelMissing = printResult != BoxLabelPrinter.PrintResult.Printed;
                     _labelStatus[result.BoxSerial] = autoPrintStatus;
