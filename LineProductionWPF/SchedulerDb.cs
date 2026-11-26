@@ -274,10 +274,10 @@ namespace LineProductionWPF
                 "       b.print_count, " +
                 "       ISNULL(bp.reprint_count, 0), " +
                 "       ISNULL(bp.reprint_reason, N''), " +
-                "       ISNULL(bp.checker_name, N'') " +
+                "       ISNULL(b.checker_name, N'') " +      // Checker of the label on the box now (= last print)
                 "FROM dbo.box b " +
                 "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
-                "OUTER APPLY (SELECT TOP (1) reprint_count, reprint_reason, checker_name " +
+                "OUTER APPLY (SELECT TOP (1) reprint_count, reprint_reason " +
                 "             FROM dbo.box_print_job WHERE box_id = b.id ORDER BY id DESC) bp " +
                 "WHERE b.tanggal = @tanggal AND b.line_production_id = @lp AND b.closed_at IS NOT NULL " +
                 "ORDER BY b.closed_at DESC, b.id DESC";

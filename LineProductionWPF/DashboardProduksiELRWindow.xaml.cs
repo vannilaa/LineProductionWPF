@@ -581,7 +581,8 @@ namespace LineProductionWPF
                         customer:     p.Job.Customer,
                         model:        p.Job.Model,
                         jobNo:        p.Job.JobNo,
-                        partNumber:   p.Job.PartNumber,
+                        // No part number on the product: the barcode, same as Cetak Ulang (LoadBoxForReprint), so both labels match.
+                        partNumber:   string.IsNullOrWhiteSpace(p.Job.PartNumber) || p.Job.PartNumber == "-" ? p.Job.Barcode : p.Job.PartNumber,
                         productName:  p.Job.ProductName,
                         qtyPerBox:    p.Job.QtyPerBox,
                         boxSerial:    result.BoxSerial,
