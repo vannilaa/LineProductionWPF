@@ -21,6 +21,11 @@ namespace LineProductionWPF
         private const double LabelWidth  = 9.0 * CmToPx;   // ≈ 340 px
         private const double LabelHeight = 6.0 * CmToPx;   // ≈ 227 px
 
+        // Manual fine-tune (mm) applied after the driver offset correction.
+        // Positive Y moves the print DOWN, negative moves it UP. Leave 0 unless still off.
+        private const double NudgeXMm = 0.0;
+        private const double NudgeYMm = 0.0;
+
         private const string Manufacturer = "PT. SUNGWOO INDONESIA";
 
         /// <summary>
@@ -103,8 +108,28 @@ namespace LineProductionWPF
                     Stretch = Stretch.Fill
                 };
                 RenderOptions.SetBitmapScalingMode(printImage, BitmapScalingMode.NearestNeighbor);
+                // PrintVisual draws starting at the driver's imageable-area origin, not the
+                // physical page corner. Our image is already sized to the full label, so a
+                // non-zero driver top/left margin pushes it down/right and cuts off the bottom.
+                // Shift it back by that origin so the label lands exactly on the sticker.
+                double offsetX = 0, offsetY = 0;
+                try
+                {
+                    var area = queue.GetPrintCapabilities(dialog.PrintTicket).PageImageableArea;
+                    if (area != null)
+                    {
+                        offsetX = area.OriginWidth;
+                        offsetY = area.OriginHeight;
+                    }
+                }
+                catch { /* driver doesn't report capabilities; assume no offset */ }
+
                 printImage.Measure(new Size(targetW, targetH));
                 printImage.Arrange(new Rect(0, 0, targetW, targetH));
+                printImage.RenderTransform = new TranslateTransform(
+                    -offsetX + NudgeXMm * CmToPx / 10.0,
+                    -offsetY + NudgeYMm * CmToPx / 10.0);
+                printImage.UpdateLayout();
 
                 dialog.PrintVisual(printImage, "Box Label - " + (boxSerial.Length > 0 ? boxSerial : partNumber));
             }
