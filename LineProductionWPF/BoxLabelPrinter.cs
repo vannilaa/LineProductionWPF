@@ -28,11 +28,33 @@ namespace LineProductionWPF
 
         private const string Manufacturer = "PT. SUNGWOO INDONESIA";
 
+        /// <summary>Outcome of a print attempt.</summary>
+        public enum PrintResult
+        {
+            Printed,
+            /// <summary>No default printer, or it is offline / paused / in error.</summary>
+            PrinterNotReady,
+            /// <summary>The driver's paper size is not 90 x 60 mm, so the label was not printed.</summary>
+            PaperMismatch,
+            /// <summary>Printing threw an error.</summary>
+            Failed
+        }
+
+        /// <summary>Short Indonesian text for a non-printed result, for the status bar / grid.</summary>
+        public static string Describe(PrintResult r) => r switch
+        {
+            PrintResult.Printed         => "Tercetak",
+            PrintResult.PrinterNotReady => "Printer tidak siap",
+            PrintResult.PaperMismatch   => "Ukuran kertas salah",
+            _                           => "Gagal cetak"
+        };
+
         /// <summary>
-        /// Prints a label for the box that was just completed.
-        /// Errors are silently swallowed so a print failure never breaks scanning.
+        /// Prints a box label. Never throws, so a print failure never breaks scanning.
+        /// With <paramref name="askOnPaperMismatch"/> false (auto-print) a wrong paper size is skipped
+        /// without any popup; with true (Cetak Ulang) the operator is asked whether to print anyway.
         /// </summary>
-        public static void Print(
+        public static PrintResult Print(
             string customer,
             string model,
             string jobNo,
@@ -41,12 +63,13 @@ namespace LineProductionWPF
             int qtyPerBox,
             string boxSerial,
             string lineName,
-            DateTime prodDate)
+            DateTime prodDate,
+            bool askOnPaperMismatch = false)
         {
             try
             {
                 var queue = GetDefaultPrintQueue();
-                if (queue == null) return;
+                if (queue == null || !IsReady(queue)) return PrintResult.PrinterNotReady;
 
                 var dialog = new PrintDialog { PrintQueue = queue };
 
@@ -57,13 +80,15 @@ namespace LineProductionWPF
 
                 if (sizeChanged)
                 {
+                    if (!askOnPaperMismatch) return PrintResult.PaperMismatch;
+
                     string msg = string.Format(CultureInfo.CurrentCulture,
                         "Driver printer memakai ukuran kertas {0:0.#} x {1:0.#} mm, bukan {2:0.#} x {3:0.#} mm.\n\n" +
                         "Atur ukuran kertas di Printer Preferences menjadi {2:0.#} x {3:0.#} mm supaya hasil tidak terpotong.\n\nTetap cetak?",
                         pageSize.Width * 25.4 / 96.0, pageSize.Height * 25.4 / 96.0,
                         expected.Width * 25.4 / 96.0, expected.Height * 25.4 / 96.0);
                     if (MessageBox.Show(msg, "Ukuran kertas berbeda", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-                        return;
+                        return PrintResult.PaperMismatch;
                 }
 
                 // Read the printer's actual printable area before building/scaling.
@@ -132,10 +157,27 @@ namespace LineProductionWPF
                 printImage.UpdateLayout();
 
                 dialog.PrintVisual(printImage, "Box Label - " + (boxSerial.Length > 0 ? boxSerial : partNumber));
+                return PrintResult.Printed;
             }
             catch
             {
-                // Print failures must not interrupt production scanning.
+                // Print failures must not interrupt production scanning; the caller shows the result.
+                return PrintResult.Failed;
+            }
+        }
+
+        private static bool IsReady(PrintQueue queue)
+        {
+            try
+            {
+                queue.Refresh();
+                return !(queue.IsOffline || queue.IsPaused || queue.IsInError ||
+                         queue.IsNotAvailable || queue.IsPaperJammed || queue.IsOutOfPaper ||
+                         queue.IsDoorOpened || queue.NeedUserIntervention);
+            }
+            catch
+            {
+                return true;   // status unknown: try printing and let PrintVisual report a failure
             }
         }
 
