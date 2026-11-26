@@ -45,6 +45,22 @@ namespace LineProductionWPF
 
                 var dialog = new PrintDialog { PrintQueue = queue };
 
+                var expected = new Size(LabelWidth, LabelHeight);
+                PrintTicket? ticket = PrepareTicket(queue, expected, out Size pageSize, out bool sizeChanged);
+                if (ticket != null)
+                    dialog.PrintTicket = ticket;
+
+                if (sizeChanged)
+                {
+                    string msg = string.Format(CultureInfo.CurrentCulture,
+                        "Driver printer memakai ukuran kertas {0:0.#} x {1:0.#} mm, bukan {2:0.#} x {3:0.#} mm.\n\n" +
+                        "Atur ukuran kertas di Printer Preferences menjadi {2:0.#} x {3:0.#} mm supaya hasil tidak terpotong.\n\nTetap cetak?",
+                        pageSize.Width * 25.4 / 96.0, pageSize.Height * 25.4 / 96.0,
+                        expected.Width * 25.4 / 96.0, expected.Height * 25.4 / 96.0);
+                    if (MessageBox.Show(msg, "Ukuran kertas berbeda", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                        return;
+                }
+
                 // Read the printer's actual printable area before building/scaling.
                 double targetW = dialog.PrintableAreaWidth  > 0 ? dialog.PrintableAreaWidth  : LabelWidth;
                 double targetH = dialog.PrintableAreaHeight > 0 ? dialog.PrintableAreaHeight : LabelHeight;
@@ -275,7 +291,7 @@ namespace LineProductionWPF
             var dateVal = new TextBlock
             {
                 Text                = prodDate.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture),
-                FontSize            = 14,
+                FontSize            = 13,
                 FontWeight          = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment   = VerticalAlignment.Center
@@ -471,6 +487,34 @@ namespace LineProductionWPF
             RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
             RenderOptions.SetEdgeMode(img, EdgeMode.Aliased);
             return img;
+        }
+
+        private static PrintTicket? PrepareTicket(PrintQueue queue, Size expected, out Size pageSize, out bool sizeChanged)
+        {
+            pageSize = expected;
+            sizeChanged = false;
+            try
+            {
+                PrintTicket current = queue.UserPrintTicket ?? queue.DefaultPrintTicket;
+                PrintTicket wanted = current.Clone();
+                wanted.PageMediaSize = new PageMediaSize(expected.Width, expected.Height);
+
+                PrintTicket validated = queue.MergeAndValidatePrintTicket(current, wanted).ValidatedPrintTicket;
+
+                PageMediaSize? got = validated.PageMediaSize;
+                if (got != null && got.Width.HasValue && got.Height.HasValue)
+                {
+                    pageSize = new Size(got.Width.Value, got.Height.Value);
+                    double tolerance = 1.5 * CmToPx / 10.0; // 1.5 mm
+                    sizeChanged = Math.Abs(pageSize.Width - expected.Width) > tolerance ||
+                                  Math.Abs(pageSize.Height - expected.Height) > tolerance;
+                }
+                return validated;
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static PrintQueue? GetDefaultPrintQueue()

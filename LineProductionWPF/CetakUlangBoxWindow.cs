@@ -7,27 +7,57 @@ using System.Windows.Media;
 namespace LineProductionWPF
 {
     /// <summary>
-    /// Dialog for reprinting a completed box label ("Cetak Ulang").
-    /// Requires the box QR/serial, an authorization code (line's map_code, masked), and a remark.
+    /// Dialog for reprinting a completed box label ("Cetak Ulang"),
+    /// adapted from DailyScheduler's ReprintDialog: requires QR/serial, masked authorization code (map_code),
+    /// and a reprint reason (with a mandatory note when "Lainnya" is chosen).
     /// </summary>
     public sealed class CetakUlangBoxWindow : Window
     {
+        private const string OtherReason = "Lainnya";
+
+        private static readonly string[] Reasons =
+        {
+            "Stiker rusak / sobek",
+            "Hasil cetak miring / bergeser",
+            "Hasil cetak pudar / tidak terbaca",
+            "Printer macet / berhenti di tengah",
+            "Data stiker salah",
+            "Stiker hilang",
+            OtherReason
+        };
+
         private readonly int _lineId;
         private readonly TextBox _txtQr;
         private readonly PasswordBox _txtAuth;
-        private readonly TextBox _txtRemark;
+        private readonly ComboBox _reason = new ComboBox { FontSize = 14, Margin = new Thickness(0, 4, 0, 10) };
+        private readonly TextBlock _noteLabel = new TextBlock { Text = "Catatan (wajib):", FontWeight = FontWeights.SemiBold, Visibility = Visibility.Collapsed };
+        private readonly TextBox _note = new TextBox
+        {
+            FontSize = 14,
+            Height = 64,
+            TextWrapping = TextWrapping.Wrap,
+            AcceptsReturn = true,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            MaxLength = 500,
+            Margin = new Thickness(0, 4, 0, 10),
+            Visibility = Visibility.Collapsed
+        };
         private readonly TextBlock _txtError;
         private readonly Button _btnPrint;
+
+        public string Reason { get; private set; } = "";
+        public string? Note { get; private set; }
 
         public CetakUlangBoxWindow(int lineId, string? defaultBoxSerial = null)
         {
             _lineId = lineId;
 
             Title = "Cetak Ulang Label Box";
-            Width = 420;
+            Width = 460;
             SizeToContent = SizeToContent.Height;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             ResizeMode = ResizeMode.NoResize;
+            ShowInTaskbar = false;
             Background = new SolidColorBrush(Color.FromRgb(0xF3, 0xF4, 0xF6));
 
             var root = new StackPanel { Margin = new Thickness(18) };
@@ -61,15 +91,13 @@ namespace LineProductionWPF
             };
             root.Children.Add(_txtAuth);
 
-            // Remark (same intent as DailyScheduler Printwindow)
-            root.Children.Add(new TextBlock { Text = "Remark", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 4) });
-            _txtRemark = new TextBox
-            {
-                FontSize = 14,
-                Padding = new Thickness(6, 4, 6, 4),
-                Margin = new Thickness(0, 0, 0, 10)
-            };
-            root.Children.Add(_txtRemark);
+            // Alasan cetak ulang (wajib) — same as DailyScheduler ReprintDialog
+            root.Children.Add(new TextBlock { Text = "Alasan cetak ulang (wajib):", FontWeight = FontWeights.SemiBold });
+            foreach (string r in Reasons) _reason.Items.Add(r);
+            root.Children.Add(_reason);
+
+            root.Children.Add(_noteLabel);
+            root.Children.Add(_note);
 
             _txtError = new TextBlock
             {
@@ -96,11 +124,12 @@ namespace LineProductionWPF
             };
             _btnPrint = new Button
             {
-                Content = "Cetak",
-                Width = 100,
+                Content = "Cetak ulang",
+                Width = 115,
                 Height = 32,
                 FontWeight = FontWeights.Bold,
-                IsDefault = true
+                IsDefault = true,
+                IsEnabled = false
             };
             _btnPrint.Click += BtnPrint_Click;
 
@@ -109,11 +138,33 @@ namespace LineProductionWPF
             root.Children.Add(buttons);
 
             Content = root;
-            Loaded += (s, e) =>
+
+            _txtQr.TextChanged += (_, _) => UpdatePrintEnabled();
+            _txtAuth.PasswordChanged += (_, _) => UpdatePrintEnabled();
+            _reason.SelectionChanged += (_, _) => UpdatePrintEnabled();
+            _note.TextChanged += (_, _) => UpdatePrintEnabled();
+
+            Loaded += (_, _) =>
             {
+                UpdatePrintEnabled();
                 if (string.IsNullOrWhiteSpace(_txtQr.Text)) _txtQr.Focus();
                 else _txtAuth.Focus();
             };
+        }
+
+        private void UpdatePrintEnabled()
+        {
+            string? reason = _reason.SelectedItem as string;
+            bool isOther = reason == OtherReason;
+
+            _noteLabel.Visibility = isOther ? Visibility.Visible : Visibility.Collapsed;
+            _note.Visibility = isOther ? Visibility.Visible : Visibility.Collapsed;
+
+            bool hasQr = !string.IsNullOrWhiteSpace(_txtQr.Text);
+            bool hasAuth = !string.IsNullOrWhiteSpace(_txtAuth.Password);
+            bool hasReason = reason != null && (!isOther || !string.IsNullOrWhiteSpace(_note.Text));
+
+            _btnPrint.IsEnabled = hasQr && hasAuth && hasReason;
         }
 
         private void ShowError(string msg)
@@ -128,26 +179,10 @@ namespace LineProductionWPF
 
             string qr = _txtQr.Text.Trim();
             string auth = _txtAuth.Password.Trim();
-            string remark = _txtRemark.Text.Trim();
+            string? reason = _reason.SelectedItem as string;
+            string? note = string.IsNullOrWhiteSpace(_note.Text) ? null : _note.Text.Trim();
 
-            if (qr.Length == 0)
-            {
-                ShowError("Isi QR / Serial Box terlebih dahulu.");
-                _txtQr.Focus();
-                return;
-            }
-            if (auth.Length == 0)
-            {
-                ShowError("Isi Kode Otorisasi terlebih dahulu.");
-                _txtAuth.Focus();
-                return;
-            }
-            if (remark.Length == 0)
-            {
-                ShowError("Isi Remark / alasan cetak ulang terlebih dahulu.");
-                _txtRemark.Focus();
-                return;
-            }
+            if (qr.Length == 0 || auth.Length == 0 || reason == null) return;
 
             _btnPrint.IsEnabled = false;
             try
@@ -169,6 +204,9 @@ namespace LineProductionWPF
                     return;
                 }
 
+                Reason = reason;
+                Note = note;
+
                 BoxLabelPrinter.Print(
                     customer:    box.Customer,
                     model:       box.Model,
@@ -188,9 +226,8 @@ namespace LineProductionWPF
             }
             finally
             {
-                _btnPrint.IsEnabled = true;
+                UpdatePrintEnabled();
             }
         }
     }
 }
-
