@@ -377,8 +377,6 @@
                                     <TextBlock Text=" / " FontSize="24" FontWeight="Bold" Foreground="#6B7280"/>
                                     <TextBlock x:Name="txtPerBox" Text="0" FontSize="24" FontWeight="Bold" Foreground="#4B5563"/>
                                 </StackPanel>
-                                <TextBlock x:Name="txtPallet" Text="Pallet"
-                                       HorizontalAlignment="Right" VerticalAlignment="Bottom"/>
                             </Grid>
                         </Border>
 

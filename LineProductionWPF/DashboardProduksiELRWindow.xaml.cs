@@ -23,7 +23,6 @@ namespace LineProductionWPF
     public partial class DashboardProduksiELRWindow : Window
     {
         private static readonly TimeSpan RefreshEvery = TimeSpan.FromSeconds(5);   // how often the database is read
-        private const int DefaultBoxesPerPallet = 10;   // not in the database yet
 
         // ---- schedule (from the DailyScheduler database) ----
         private readonly KanbanTracker _tracker = new KanbanTracker();
@@ -53,19 +52,13 @@ namespace LineProductionWPF
         private bool _syncBoxProgress;     // next Render() takes the box progress from the (fresh) database read
         private readonly DispatcherTimer _popupTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
         private readonly DispatcherTimer _clockTimer = new DispatcherTimer();
-        private readonly DispatcherTimer _holdTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(1)   // how long 10 / 10 stays on screen
-        };
         // After a box completes the scan list stays visible for a moment (so the last scan is not gone at once), then clears.
         private readonly DispatcherTimer _clearListTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
         };
         private int ScanPerBox => _current != null && _current.QtyPerBox > 0 ? _current.QtyPerBox : 1;
-        private int BoxesPerPallet => DefaultBoxesPerPallet;
-        private int BoxesCompleted => _palletCount * BoxesPerPallet + _boxCount;
-        private int _scansInBox, _boxCount, _palletCount;
+        private int _scansInBox, _boxCount;
         private string _boxName = "";      // name of the box being filled (or the one that was just completed), e.g. B261119.13.9CE.001
         private bool _boxFull;             // true right after a scan completed the box (shown as "penuh")
 
@@ -77,13 +70,6 @@ namespace LineProductionWPF
             lstScans.ItemsSource = _scans;
 
             _popupTimer.Tick += (s, e) => CloseScanPopup();
-
-            _holdTimer.Tick += (s, e) =>
-            {
-                _holdTimer.Stop();
-                txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4)); // back to blue
-                UpdateScanCounters();                                                          // show the real 0
-            };
 
             _clearListTimer.Tick += (s, e) =>
             {
@@ -315,8 +301,7 @@ namespace LineProductionWPF
                 _scansInBox = _current.OpenBoxScans;
                 _boxName = _current.OpenBoxSerial;
                 _boxFull = false;
-                _boxCount = _current.CompletedBoxes % BoxesPerPallet;
-                _palletCount = _current.CompletedBoxes / BoxesPerPallet;
+                _boxCount = _current.CompletedBoxes;
             }
             _syncBoxProgress = false;
 
@@ -362,7 +347,6 @@ namespace LineProductionWPF
 
         private void ResetScanPanel()
         {
-            _holdTimer.Stop();
             _clearListTimer.Stop();
             txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x2F, 0x6F, 0xE4));
             _scans.Clear();
@@ -370,7 +354,7 @@ namespace LineProductionWPF
             _scanHistory.Clear();
             _scanHistoryPosition = 0;
             _scanHistoryDraft = "";
-            _scansInBox = _boxCount = _palletCount = 0;
+            _scansInBox = _boxCount = 0;
             _boxName = "";
             _boxFull = false;
         }
@@ -499,10 +483,7 @@ namespace LineProductionWPF
                 _scansInBox = result.ScansInOpenBox;
                 _boxName = result.BoxSerial;                                        // the box this scan went into
                 _boxFull = result.ScansInOpenBox == 0 && result.CompletedBoxes > 0; // that box is now complete
-                _boxCount = result.CompletedBoxes % BoxesPerPallet;
-                _palletCount = result.CompletedBoxes / BoxesPerPallet;
-                if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && result.CompletedBoxes % BoxesPerPallet == 0)
-                    ShowPalletFull();
+                _boxCount = result.CompletedBoxes;
 
                 // A box was just completed: the list on screen is emptied after a short hold (so the last scan stays visible
                 // for a moment) and the next box starts with a clean list.
@@ -553,27 +534,13 @@ namespace LineProductionWPF
             scanBanner.Visibility = Visibility.Collapsed;
         }
 
-        private void ShowPalletFull()
-        {
-            txtScanned.Text = BoxesCompleted.ToString();
-            txtScanned.Foreground = new SolidColorBrush(Color.FromRgb(0x22, 0xC5, 0x5E)); // green
-
-            _holdTimer.Stop();
-            _holdTimer.Start();                     // restarts the one-second wait
-        }
-
         private void UpdateScanCounters()
         {
             txtScanPerBox.Text = "SCAN per BOX: " + _scansInBox + " / " + ScanPerBox + "\n" +
                                  "Box: " + (string.IsNullOrEmpty(_boxName) ? "-" : _boxName + (_boxFull ? "\n(penuh)" : ""));
             txtPerBox.Text = (_current?.BoxesRequired ?? 0).ToString();
-            txtPallet.Text = "Pallet: " + _palletCount;
 
-            // while the completed-pallet display is held, don't overwrite the box total
-            if (!_holdTimer.IsEnabled)
-            {
-                txtScanned.Text = BoxesCompleted.ToString();
-            }
+            txtScanned.Text = _boxCount.ToString();
         }
 
         private void UpdateSelisih(int selisih, int selisihHari)
@@ -882,7 +849,6 @@ namespace LineProductionWPF
         protected override void OnClosed(EventArgs e)
         {
             _clockTimer.Stop();
-            _holdTimer.Stop();
             CloseScanPopup();
             _webRetry.Stop();
             try { _web?.Dispose(); } catch { }
