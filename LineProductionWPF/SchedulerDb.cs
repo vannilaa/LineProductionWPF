@@ -35,6 +35,7 @@ namespace LineProductionWPF
         public int CompletedBoxes { get; set; }  // boxes already closed in the database
         public int OpenBoxScans { get; set; }    // scans in the box that is still open
         public string Customer { get; set; } = "";   // product.customer, e.g. "PT. ASTRA DAIHATSU MOTOR"
+        public string ProductName { get; set; } = "";  // product.product_name, e.g. "Belt Assy, RR No.2 Seat, Outer LH"
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
@@ -261,7 +262,7 @@ namespace LineProductionWPF
                 "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at, " +
                 "       (SELECT TOP (1) b.serial FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
                 "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC), " +
-                "       it.version, p.model, it.added_at, it.start_time " +
+                "       it.version, p.model, it.added_at, it.start_time, p.product_name " +
                 "FROM items it " +
                 "LEFT JOIN product p ON p.barcode = it.barcode " +
                 "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
@@ -307,7 +308,8 @@ namespace LineProductionWPF
                     ScheduleVersion = r.GetInt32(21),
                     Model = r.IsDBNull(22) ? "" : r.GetString(22).Trim(),
                     AddedAt = r.IsDBNull(23) ? null : r.GetDateTime(23),
-                    StartTime = r.IsDBNull(24) ? null : r.GetTimeSpan(24)
+                    StartTime = r.IsDBNull(24) ? null : r.GetTimeSpan(24),
+                    ProductName = r.IsDBNull(25) ? "" : r.GetString(25).Trim()
                 });
             }
             return list;

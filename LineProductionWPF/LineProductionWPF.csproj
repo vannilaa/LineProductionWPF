@@ -50,6 +50,7 @@
 
   <ItemGroup>
     <!-- Build with DailyScheduler checked out beside this repository to use its shared timing rules. -->
+    <PackageReference Include="QRCoder" Version="1.9.0" />
     <ProjectReference Include="..\..\DailyScheduler\ProductionTime.Shared\ProductionTime.Shared.csproj" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.2" />
     <PackageReference Include="System.IO.Ports" Version="10.0.0" />

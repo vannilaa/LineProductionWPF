@@ -497,6 +497,18 @@ namespace LineProductionWPF
                     _clearListTimer.Stop();
                     _clearListTimer.Start();
 
+                    // Print a box label automatically on the default printer.
+                    BoxLabelPrinter.Print(
+                        customer:     p.Job.Customer,
+                        model:        p.Job.Model,
+                        jobNo:        p.Job.JobNo,
+                        partNumber:   p.Job.PartNumber,
+                        productName:  p.Job.ProductName,
+                        qtyPerBox:    p.Job.QtyPerBox,
+                        boxSerial:    result.BoxSerial,
+                        lineName:     p.Line.Name,
+                        prodDate:     DateTime.Today);
+
                     // Add the completed box to the Terima Box / Pallet grid.
                     _terimaBoxRows.Insert(0, new ScannedBoxRow
                     {
