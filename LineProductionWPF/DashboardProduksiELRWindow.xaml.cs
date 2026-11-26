@@ -226,9 +226,15 @@ namespace LineProductionWPF
             string editedAt = revision.EditedAt.HasValue
                 ? " " + revision.EditedAt.Value.ToString("HH:mm", CultureInfo.InvariantCulture)
                 : "";
-            string editor = string.IsNullOrWhiteSpace(revision.Machine) ? "" : " oleh " + revision.Machine;
+            string editor = string.IsNullOrWhiteSpace(revision.Editor) ? "" : " oleh " + revision.Editor;
+            if (!string.IsNullOrWhiteSpace(revision.Machine))
+                editor += string.IsNullOrWhiteSpace(revision.Editor) ? " oleh " + revision.Machine : " @ " + revision.Machine;
             string reason = string.IsNullOrWhiteSpace(revision.Reason) ? "" : ": " + revision.Reason;
-            _scheduleNoticeText = "JADWAL DIREVISI (v" + revision.VersionNo + ")" + editedAt + editor + reason;
+            string changes = revision.Changes.Count == 0
+                ? "(tidak ada perbedaan)"
+                : string.Join(Environment.NewLine, revision.Changes);
+            _scheduleNoticeText = "JADWAL DIREVISI (v" + revision.VersionNo + ")" + editedAt + editor + reason +
+                                  Environment.NewLine + "Perubahan jadwal:" + Environment.NewLine + changes;
             _scheduleNoticeUntil = DateTime.Now.AddMinutes(1);
             UpdateScheduleNoticeCountdown();
             ScanSounds.PlayScheduleRevision();
@@ -252,7 +258,7 @@ namespace LineProductionWPF
             }
 
             int seconds = (int)Math.Ceiling(remaining.TotalSeconds);
-            txtStatus.Text = _scheduleNoticeText + "  (hilang dalam " +
+            txtStatus.Text = _scheduleNoticeText + Environment.NewLine + "(hilang dalam " +
                              (seconds / 60).ToString("00", CultureInfo.InvariantCulture) + ":" +
                              (seconds % 60).ToString("00", CultureInfo.InvariantCulture) + ")";
             txtStatus.Foreground = new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));

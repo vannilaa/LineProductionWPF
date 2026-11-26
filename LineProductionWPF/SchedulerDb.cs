@@ -314,29 +314,141 @@ namespace LineProductionWPF
         }
 
         /// <summary>The current schedule version and, when available, details of its latest edit.</summary>
-        public sealed record ScheduleRevision(int VersionNo, DateTime? EditedAt, string Reason, string Machine);
+        public sealed record ScheduleRevision(int VersionNo, DateTime? EditedAt, string Reason, string Editor, string Machine, IReadOnlyList<string> Changes);
+
+        private sealed record ScheduleEditItem(int Urutan, string Barcode, string Name, int Jumlah, bool CetakBox, string Printer, TimeSpan? StartTime);
 
         /// <summary>The current schedule version and latest edit details of this date + line, or null if no schedule exists.</summary>
         public static ScheduleRevision? LoadLatestRevision(DateTime tanggal, int lineProductionId)
         {
             using var con = new SqlConnection(ConnectionString);
             con.Open();
-            using var cmd = con.CreateCommand();
-            cmd.CommandText =
-                "SELECT s.version, e.edited_at, e.reason, e.machine_name " +
-                "FROM schedule s " +
-                "OUTER APPLY (SELECT TOP (1) edited_at, reason, machine_name " +
-                "            FROM schedule_edit WHERE schedule_id = s.id ORDER BY version_no DESC) e " +
-                "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp";
-            cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
-            cmd.Parameters.AddWithValue("@lp", lineProductionId);
-            cmd.CommandTimeout = 10;
-            using var r = cmd.ExecuteReader();
-            if (!r.Read()) return null;
-            return new ScheduleRevision(r.GetInt32(0), r.IsDBNull(1) ? null : r.GetDateTime(1),
-                r.IsDBNull(2) ? "" : r.GetString(2).Trim(),
-                r.IsDBNull(3) ? "" : r.GetString(3).Trim());
+
+            int versionNo;
+            int? editId;
+            DateTime? editedAt;
+            string reason;
+            string editor;
+            string machine;
+            using (var cmd = con.CreateCommand())
+            {
+                cmd.CommandText =
+                    "SELECT s.version, e.id, e.edited_at, e.reason, e.windows_user, e.machine_name " +
+                    "FROM schedule s " +
+                    "OUTER APPLY (SELECT TOP (1) id, edited_at, reason, windows_user, machine_name " +
+                    "            FROM schedule_edit WHERE schedule_id = s.id ORDER BY version_no DESC) e " +
+                    "WHERE s.tanggal = @tanggal AND s.line_production_id = @lp";
+                cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+                cmd.Parameters.AddWithValue("@lp", lineProductionId);
+                cmd.CommandTimeout = 10;
+                using var r = cmd.ExecuteReader();
+                if (!r.Read()) return null;
+                versionNo = r.GetInt32(0);
+                editId = r.IsDBNull(1) ? null : r.GetInt32(1);
+                editedAt = r.IsDBNull(2) ? null : r.GetDateTime(2);
+                reason = r.IsDBNull(3) ? "" : r.GetString(3).Trim();
+                editor = r.IsDBNull(4) ? "" : r.GetString(4).Trim();
+                machine = r.IsDBNull(5) ? "" : r.GetString(5).Trim();
+            }
+
+            var before = new List<ScheduleEditItem>();
+            var after = new List<ScheduleEditItem>();
+            if (editId.HasValue)
+            {
+                using var itemsCmd = con.CreateCommand();
+                itemsCmd.CommandText =
+                    "SELECT i.side, i.urutan, i.barcode, i.jumlah, i.cetak_box, i.printer, i.start_time, " +
+                    "       COALESCE(COALESCE(p.part_number_code, p.part_number) + COALESCE(' - ' + p.part, ''), i.barcode) " +
+                    "FROM schedule_edit_item i " +
+                    "LEFT JOIN product p ON p.barcode = i.barcode " +
+                    "WHERE i.schedule_edit_id = @edit " +
+                    "ORDER BY CASE i.side WHEN 'B' THEN 0 ELSE 1 END, i.urutan";
+                itemsCmd.Parameters.Add("@edit", System.Data.SqlDbType.Int).Value = editId.Value;
+                itemsCmd.CommandTimeout = 10;
+                using var r = itemsCmd.ExecuteReader();
+                while (r.Read())
+                {
+                    string barcode = r.GetString(2);
+                    var item = new ScheduleEditItem(
+                        r.GetInt32(1), barcode, r.IsDBNull(7) ? barcode : r.GetString(7),
+                        r.GetInt32(3), r.GetBoolean(4), r.IsDBNull(5) ? "" : r.GetString(5),
+                        r.IsDBNull(6) ? null : r.GetTimeSpan(6));
+                    if (r.GetString(0) == "B") before.Add(item);
+                    else after.Add(item);
+                }
+            }
+
+            return new ScheduleRevision(versionNo, editedAt, reason, editor, machine, DescribeScheduleChanges(before, after));
         }
+
+        private static List<string> DescribeScheduleChanges(IList<ScheduleEditItem> before, IList<ScheduleEditItem> after)
+        {
+            var changed = new List<string>();
+            var added = new List<string>();
+            var removed = new List<string>();
+            List<string> beforeKeys = ScheduleItemKeys(before);
+            List<string> afterKeys = ScheduleItemKeys(after);
+            var beforeIndex = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < beforeKeys.Count; i++) beforeIndex[beforeKeys[i]] = i;
+            var afterSet = new HashSet<string>(afterKeys, StringComparer.Ordinal);
+            var beforeOrder = new List<string>();
+            var afterOrder = new List<string>();
+
+            for (int i = 0; i < after.Count; i++)
+            {
+                ScheduleEditItem current = after[i];
+                if (!beforeIndex.TryGetValue(afterKeys[i], out int beforePosition))
+                {
+                    string start = current.StartTime.HasValue ? ", Mulai " + FormatStartTime(current.StartTime) : "";
+                    added.Add("Ditambah: Urutan " + (i + 1) + "  " + current.Name + ", Jumlah " + FormatQuantity(current.Jumlah) + start);
+                    continue;
+                }
+
+                afterOrder.Add(afterKeys[i]);
+                ScheduleEditItem previous = before[beforePosition];
+                var parts = new List<string>();
+                if (previous.Jumlah != current.Jumlah)
+                    parts.Add("Jumlah " + FormatQuantity(previous.Jumlah) + " → " + FormatQuantity(current.Jumlah));
+                if (previous.CetakBox != current.CetakBox)
+                    parts.Add("Cetak Box " + FormatYesNo(previous.CetakBox) + " → " + FormatYesNo(current.CetakBox));
+                if (!string.Equals(previous.Printer, current.Printer, StringComparison.Ordinal))
+                    parts.Add("Printer " + FormatPrinter(previous.Printer) + " → " + FormatPrinter(current.Printer));
+                if (previous.StartTime != current.StartTime)
+                    parts.Add("Mulai " + FormatStartTime(previous.StartTime) + " → " + FormatStartTime(current.StartTime));
+                if (parts.Count > 0)
+                    changed.Add("Urutan " + (i + 1) + "  " + current.Name + ": " + string.Join(";  ", parts));
+            }
+
+            for (int i = 0; i < before.Count; i++)
+            {
+                if (afterSet.Contains(beforeKeys[i])) beforeOrder.Add(beforeKeys[i]);
+                else removed.Add("Dihapus: Urutan " + (i + 1) + "  " + before[i].Name + ", Jumlah " + FormatQuantity(before[i].Jumlah));
+            }
+
+            changed.AddRange(added);
+            changed.AddRange(removed);
+            if (!beforeOrder.SequenceEqual(afterOrder))
+                changed.Add("Urutan produksi diubah (lihat tab Sebelum / Sesudah).");
+            return changed;
+        }
+
+        private static List<string> ScheduleItemKeys(IList<ScheduleEditItem> items)
+        {
+            var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+            var keys = new List<string>(items.Count);
+            foreach (ScheduleEditItem item in items)
+            {
+                seen.TryGetValue(item.Barcode, out int occurrence);
+                seen[item.Barcode] = occurrence + 1;
+                keys.Add(item.Barcode + "#" + occurrence);
+            }
+            return keys;
+        }
+
+        private static string FormatQuantity(int value) => value.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
+        private static string FormatStartTime(TimeSpan? value) => value.HasValue ? value.Value.ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture) : "otomatis";
+        private static string FormatYesNo(bool value) => value ? "Ya" : "Tidak";
+        private static string FormatPrinter(string value) => string.IsNullOrEmpty(value) ? "-" : value;
 
         private static SqlCommand Command(SqlConnection con, SqlTransaction tx, string sql)
         {
