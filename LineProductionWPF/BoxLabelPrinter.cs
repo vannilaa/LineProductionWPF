@@ -11,7 +11,8 @@ using QRCoder;
 namespace LineProductionWPF
 {
     /// <summary>
-    /// Prints a 6 × 9 cm box label to the system default printer whenever a box is completed.
+    /// Prints a 6 × 9 cm box label whenever a box is completed, on the printer chosen in Pengaturan
+    /// (AppSettings.PrinterName), or the Windows default printer when none is chosen.
     /// </summary>
     public static class BoxLabelPrinter
     {
@@ -32,7 +33,7 @@ namespace LineProductionWPF
         public enum PrintResult
         {
             Printed,
-            /// <summary>No default printer, or it is offline / paused / in error.</summary>
+            /// <summary>No printer (chosen one not installed / no default), or it is offline / paused / in error.</summary>
             PrinterNotReady,
             /// <summary>The driver's paper size is not 90 x 60 mm, so the label was not printed.</summary>
             PaperMismatch,
@@ -64,13 +65,17 @@ namespace LineProductionWPF
             string boxSerial,
             string lineName,
             DateTime prodDate,
-            bool askOnPaperMismatch = false,
-            bool qrModelPartNumber = false)
+            bool qrModelPartNumber = false,
+            string checkerName,
+            bool askOnPaperMismatch = false)
         {
+            LastPrinterName = null;
             try
             {
-                var queue = GetDefaultPrintQueue();
-                if (queue == null || !IsReady(queue)) return PrintResult.PrinterNotReady;
+                var queue = GetLabelPrintQueue();
+                if (queue == null) return PrintResult.PrinterNotReady;
+                LastPrinterName = queue.FullName;
+                if (!IsReady(queue)) return PrintResult.PrinterNotReady;
 
                 var dialog = new PrintDialog { PrintQueue = queue };
 
@@ -99,6 +104,7 @@ namespace LineProductionWPF
                 var visual = BuildLabel(
                     customer, model, jobNo, partNumber, productName,
                     qtyPerBox, boxSerial, lineName, prodDate, qrModelPartNumber);
+                    qtyPerBox, boxSerial, lineName, prodDate, checkerName);
 
                 // If the printer's printable area is portrait (taller than wide),
                 // rotate the 90x60mm landscape label 90° so it fills the page without top/bottom whitespace.
@@ -187,6 +193,7 @@ namespace LineProductionWPF
             string partNumber, string productName,
             int qtyPerBox, string boxSerial, string lineName, DateTime prodDate,
             bool qrModelPartNumber = false)
+            int qtyPerBox, string boxSerial, string lineName, DateTime prodDate, string checkerName)
         {
             var borderBrush = Brushes.Black;
             const double lineThickness = 1.5;
@@ -481,7 +488,7 @@ namespace LineProductionWPF
             Grid.SetRow(row2, 2);
             grid.Children.Add(row2);
 
-            // ── Row 3: Footer – PT. SUNGWOO INDONESIA | Checker: ─────────────────
+            // ── Row 3: Footer – PT. SUNGWOO INDONESIA | Checker name ─────────────
             var footerBorder = new Border
             {
                 BorderBrush     = borderBrush,
@@ -514,13 +521,19 @@ namespace LineProductionWPF
             {
                 Padding = new Thickness(6, 2, 6, 2)
             };
-            checkerBorder.Child = new TextBlock
+            // Checker typed in Pengaturan; shrinks to fit when the name is long.
+            checkerBorder.Child = new Viewbox
             {
-                Text                = "",
-                FontSize            = 12,
-                FontWeight          = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Left,
-                VerticalAlignment   = VerticalAlignment.Center
+                Stretch          = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly,
+                Child = new TextBlock
+                {
+                    Text                = (checkerName ?? "").Trim(),
+                    FontSize            = 12,
+                    FontWeight          = FontWeights.Bold,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment   = VerticalAlignment.Center
+                }
             };
             Grid.SetColumn(checkerBorder, 1);
             footerGrid.Children.Add(checkerBorder);
@@ -621,16 +634,70 @@ namespace LineProductionWPF
             }
         }
 
-        private static PrintQueue? GetDefaultPrintQueue()
+        /// <summary>Full name of the printer used by the last Print() call (null when no printer was found). Saved in box_print_job.printer.</summary>
+        public static string? LastPrinterName { get; private set; }
+
+        /// <summary>The printer chosen in Pengaturan, or the Windows default when none is chosen. Null when not found.</summary>
+        private static PrintQueue? GetLabelPrintQueue() => FindQueue(AppSettings.Current.PrinterName);
+
+        /// <summary>Printer by name; empty name = Windows default printer.</summary>
+        private static PrintQueue? FindQueue(string? name)
         {
             try
             {
-                using var server = new LocalPrintServer();
-                return server.DefaultPrintQueue;
+                var server = new LocalPrintServer();
+                if (string.IsNullOrWhiteSpace(name)) return server.DefaultPrintQueue;
+                foreach (PrintQueue q in server.GetPrintQueues(new[] { EnumeratedPrintQueueTypes.Local, EnumeratedPrintQueueTypes.Connections }))
+                    if (string.Equals(q.FullName, name, StringComparison.OrdinalIgnoreCase)) return q;
+                return null;   // chosen printer removed / renamed: do NOT silently print on another printer
             }
             catch
             {
                 return null;
+            }
+        }
+
+        /// <summary>Installed printers (local + network connections), for the Pengaturan window.</summary>
+        public static System.Collections.Generic.List<string> ListPrinters()
+        {
+            var list = new System.Collections.Generic.List<string>();
+            try
+            {
+                var server = new LocalPrintServer();
+                foreach (PrintQueue q in server.GetPrintQueues(new[] { EnumeratedPrintQueueTypes.Local, EnumeratedPrintQueueTypes.Connections }))
+                    list.Add(q.FullName);
+            }
+            catch { /* spooler not running: empty list */ }
+            list.Sort(StringComparer.OrdinalIgnoreCase);
+            return list;
+        }
+
+        /// <summary>Name of the Windows default printer, or "" when there is none.</summary>
+        public static string DefaultPrinterName()
+        {
+            try { return new LocalPrintServer().DefaultPrintQueue?.FullName ?? ""; }
+            catch { return ""; }
+        }
+
+        /// <summary>Short status of a printer for the Pengaturan window ("Siap", "Offline", ...). Empty name = Windows default.</summary>
+        public static string PrinterStatus(string? name)
+        {
+            var q = FindQueue(name);
+            if (q == null) return "Printer tidak ditemukan";
+            try
+            {
+                q.Refresh();
+                if (q.IsOffline || q.IsNotAvailable) return "Offline";
+                if (q.IsPaused) return "Dijeda (paused)";
+                if (q.IsOutOfPaper) return "Kertas habis";
+                if (q.IsPaperJammed) return "Kertas macet";
+                if (q.IsDoorOpened) return "Tutup printer terbuka";
+                if (q.IsInError || q.NeedUserIntervention) return "Error";
+                return "Siap";
+            }
+            catch
+            {
+                return "Status tidak diketahui";
             }
         }
     }
