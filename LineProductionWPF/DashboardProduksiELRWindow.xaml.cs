@@ -873,6 +873,29 @@ namespace LineProductionWPF
             Application.Current.Shutdown();
         }
 
+        private void btnCetakUlang_Click(object sender, RoutedEventArgs e)
+        {
+            if (_line == null)
+            {
+                txtStatus.Text = "Pilih line terlebih dahulu.";
+                return;
+            }
+
+            string? latestBox = _terimaBoxRows.Count > 0 ? _terimaBoxRows[0].BoxSerial : null;
+            _pickerOpen = true;
+            try
+            {
+                var dlg = new CetakUlangBoxWindow(_line.Id, latestBox) { Owner = this };
+                if (dlg.ShowDialog() == true)
+                    txtStatus.Text = "Label box berhasil dicetak ulang.";
+            }
+            finally
+            {
+                _pickerOpen = false;
+                txtScan.Focus();
+            }
+        }
+
         protected override void OnClosed(EventArgs e)
         {
             _clockTimer.Stop();

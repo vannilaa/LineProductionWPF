@@ -198,6 +198,61 @@ namespace LineProductionWPF
             return baseUrl + "?filter_line=" + System.Net.WebUtility.UrlEncode(filter);
         }
 
+        public static string GetLineMapCode(int lineProductionId)
+        {
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText = "SELECT ISNULL(LTRIM(RTRIM(map_code)), N'') FROM dbo.line_production WHERE id = @lp";
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
+            object? v = cmd.ExecuteScalar();
+            return v == null || v == DBNull.Value ? "" : (Convert.ToString(v) ?? "").Trim();
+        }
+
+        public sealed record BoxLabelData(
+            string Customer,
+            string Model,
+            string JobNo,
+            string PartNumber,
+            string ProductName,
+            int QtyPerBox,
+            string BoxSerial,
+            string LineName,
+            DateTime ProdDate);
+
+        public static BoxLabelData? LoadBoxForReprint(string boxSerial)
+        {
+            boxSerial = (boxSerial ?? "").Trim();
+            if (boxSerial.Length == 0) return null;
+
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText =
+                "SELECT TOP (1) " +
+                "  ISNULL(p.customer, N''), ISNULL(p.model, N''), ISNULL(p.job_no, N''), " +
+                "  COALESCE(p.part_number_code, p.part_number, b.barcode), ISNULL(p.product_name, N''), " +
+                "  ISNULL(b.qty_per_box, ISNULL(p.qty_per_box, 0)), b.serial, ISNULL(lp.name, N''), b.tanggal " +
+                "FROM dbo.box b " +
+                "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
+                "LEFT JOIN dbo.line_production lp ON lp.id = b.line_production_id " +
+                "WHERE b.serial = @serial";
+            cmd.Parameters.AddWithValue("@serial", boxSerial);
+            using var r = cmd.ExecuteReader();
+            if (!r.Read()) return null;
+
+            return new BoxLabelData(
+                Customer:    r.GetString(0).Trim(),
+                Model:       r.GetString(1).Trim(),
+                JobNo:       r.GetString(2).Trim(),
+                PartNumber:  r.GetString(3).Trim(),
+                ProductName: r.GetString(4).Trim(),
+                QtyPerBox:   r.GetInt32(5),
+                BoxSerial:   r.GetString(6).Trim(),
+                LineName:    r.GetString(7).Trim(),
+                ProdDate:    r.GetDateTime(8));
+        }
+
         public static List<KanbanLine> LoadLines()
         {
             var list = new List<KanbanLine>();

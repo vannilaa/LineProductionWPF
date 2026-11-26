@@ -45,16 +45,47 @@ namespace LineProductionWPF
 
                 var dialog = new PrintDialog { PrintQueue = queue };
 
-                var ticket = queue.DefaultPrintTicket.Clone();
-                ticket.PageMediaSize = new PageMediaSize(PageMediaSizeName.Unknown, LabelWidth, LabelHeight);
-                ticket.PageOrientation = PageOrientation.Landscape;
-                dialog.PrintTicket = ticket;
+                // Read the printer's actual printable area before building/scaling.
+                double targetW = dialog.PrintableAreaWidth  > 0 ? dialog.PrintableAreaWidth  : LabelWidth;
+                double targetH = dialog.PrintableAreaHeight > 0 ? dialog.PrintableAreaHeight : LabelHeight;
 
                 var visual = BuildLabel(
                     customer, model, jobNo, partNumber, productName,
                     qtyPerBox, boxSerial, lineName, prodDate);
 
-                dialog.PrintVisual(visual, "Box Label - " + (boxSerial.Length > 0 ? boxSerial : partNumber));
+                // Wrap in a Viewbox sized to the printer's printable area so it fills the label cleanly.
+                var container = new Viewbox
+                {
+                    Width   = targetW,
+                    Height  = targetH,
+                    Stretch = Stretch.Uniform,
+                    Child   = visual
+                };
+                container.Measure(new Size(targetW, targetH));
+                container.Arrange(new Rect(0, 0, targetW, targetH));
+                container.UpdateLayout();
+
+                // Rasterize at 203 DPI (thermal label printer native DPI) so the driver
+                // receives a crisp 1:1 bitmap with no XPS vector issues.
+                const double dpi = 203.0;
+                int pxWidth  = (int)Math.Ceiling(targetW * dpi / 96.0);
+                int pxHeight = (int)Math.Ceiling(targetH * dpi / 96.0);
+                var rtb = new RenderTargetBitmap(pxWidth, pxHeight, dpi, dpi, PixelFormats.Pbgra32);
+                rtb.Render(container);
+                rtb.Freeze();
+
+                var printImage = new Image
+                {
+                    Source  = rtb,
+                    Width   = targetW,
+                    Height  = targetH,
+                    Stretch = Stretch.Fill
+                };
+                RenderOptions.SetBitmapScalingMode(printImage, BitmapScalingMode.NearestNeighbor);
+                printImage.Measure(new Size(targetW, targetH));
+                printImage.Arrange(new Rect(0, 0, targetW, targetH));
+
+                dialog.PrintVisual(printImage, "Box Label - " + (boxSerial.Length > 0 ? boxSerial : partNumber));
             }
             catch
             {
@@ -266,13 +297,7 @@ namespace LineProductionWPF
                 Padding         = new Thickness(2)
             };
             string qrPayload = boxSerial.Length > 0 ? boxSerial : partNumber;
-            qrBorder.Child = new Image
-            {
-                Source              = CreateQrImage(qrPayload),
-                Stretch             = Stretch.Uniform,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center
-            };
+            qrBorder.Child = MakeQrBitmap(qrPayload, margin: 0, QRCodeGenerator.ECCLevel.M);
             Grid.SetColumn(qrBorder, 1);
             row2.Children.Add(qrBorder);
 
@@ -394,23 +419,58 @@ namespace LineProductionWPF
             return root;
         }
 
-        private static BitmapImage CreateQrImage(string content)
-        {
-            using var generator = new QRCodeGenerator();
-            using var data = generator.CreateQrCode(content, QRCodeGenerator.ECCLevel.M);
-            var qr = new PngByteQRCode(data);
-            byte[] bytes = qr.GetGraphic(8, drawQuietZones: false);
+        private static readonly QRCodeGenerator _qrGenerator = new QRCodeGenerator();
 
-            var image = new BitmapImage();
-            using (var ms = new MemoryStream(bytes))
+        /// <summary>
+        /// QR code generated as an exact 1-bit/grayscale bitmap displayed with NearestNeighbor scaling,
+        /// ensuring every module is a razor-sharp square with zero anti-aliasing blur.
+        /// </summary>
+        private static FrameworkElement MakeQrBitmap(string text, double margin, QRCodeGenerator.ECCLevel level = QRCodeGenerator.ECCLevel.M)
+        {
+            var data = _qrGenerator.CreateQrCode(text, level);
+            var m = data.ModuleMatrix;
+            int total = m.Count;
+
+            int minX = total, minY = total, maxX = -1, maxY = -1;
+            for (int y = 0; y < total; y++)
+                for (int x = 0; x < total; x++)
+                    if (m[y][x])
+                    {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+
+            if (maxX < 0) return new Border();
+
+            int size = Math.Max(maxX - minX + 1, maxY - minY + 1);
+            var raw = new byte[size * size];
+            for (int y = 0; y < size; y++)
             {
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.StreamSource = ms;
-                image.EndInit();
-                image.Freeze();
+                int srcY = y + minY;
+                for (int x = 0; x < size; x++)
+                {
+                    int srcX = x + minX;
+                    bool dark = srcY < total && srcX < total && m[srcY][srcX];
+                    raw[y * size + x] = dark ? (byte)0 : (byte)255;
+                }
             }
-            return image;
+
+            var bitmap = BitmapSource.Create(size, size, 96, 96, PixelFormats.Gray8, null, raw, size);
+            bitmap.Freeze();
+
+            var img = new Image
+            {
+                Source = bitmap,
+                Stretch = Stretch.Uniform,
+                Margin = new Thickness(margin),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment   = VerticalAlignment.Center
+            };
+            RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
+            RenderOptions.SetEdgeMode(img, EdgeMode.Aliased);
+            return img;
         }
 
         private static PrintQueue? GetDefaultPrintQueue()

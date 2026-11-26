@@ -250,7 +250,8 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="5" VerticalAlignment="Center">
-                        <Button Content="Cetak Ulang" Style="{StaticResource HeaderButton}"/>
+                        <Button x:Name="btnCetakUlang" Content="Cetak Ulang" Style="{StaticResource HeaderButton}"
+                            Click="btnCetakUlang_Click"/>
                         <Button x:Name="btnPause" Content="Jeda Counter" Style="{StaticResource StopButton}"
                             Click="btnPause_Click"/>
                     </StackPanel>
