@@ -30,6 +30,7 @@ namespace LineProductionWPF
         private DateTime _date = DateTime.Today;
         private List<KanbanJob> _jobs = new List<KanbanJob>();
         private KanbanJob _current;                                   // the job on the boards
+        private bool _jobsRead;                                       // the jobs of _line/_date were read at least once (empty = really no schedule)
         private DateTime _lastRead = DateTime.MinValue;
         private bool _reading;
         private int? _lastScheduleRevisionVersion;
@@ -95,8 +96,6 @@ namespace LineProductionWPF
             {
                 serialMonitor.ApplySettings(AppSettings.Current, connectNow: AppSettings.Current.EspAutoConnect);
                 UpdateCheckerText();
-                if (AppSettings.Current.TodayChecker.Length == 0)
-                    Dispatcher.BeginInvoke(new Action(() => OpenSettings()), DispatcherPriority.ApplicationIdle);
             };
         }
 
@@ -108,7 +107,7 @@ namespace LineProductionWPF
             _pickerOpen = true;
             try
             {
-                var dlg = new SettingsWindow(serialMonitor) { Owner = this };
+                var dlg = new SettingsWindow(serialMonitor, _line) { Owner = this };
                 dlg.ShowDialog();
             }
             finally
@@ -119,10 +118,29 @@ namespace LineProductionWPF
             }
         }
 
-        /// <summary>"Checker: name" next to the gear; red when no Checker was entered today.</summary>
+        /// <summary>Asks the Checker of the current line (app opened, line changed, new day). "Nanti" leaves it empty (red).</summary>
+        private void AskChecker()
+        {
+            if (_line == null) return;
+            var line = _line;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!ReferenceEquals(line, _line) || !IsLoaded) return;   // the line changed again meanwhile
+                _pickerOpen = true;
+                try { new CheckerWindow(line) { Owner = this }.ShowDialog(); }
+                finally
+                {
+                    _pickerOpen = false;
+                    UpdateCheckerText();
+                    txtScan.Focus();
+                }
+            }), DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>"Checker: name" next to the gear; red when no Checker was entered today for this line.</summary>
         private void UpdateCheckerText()
         {
-            string checker = AppSettings.Current.TodayChecker;
+            string checker = _line != null ? AppSettings.Current.CheckerFor(_line.Id) : "";
             txtChecker.Text = "Checker: " + (checker.Length > 0 ? checker : "BELUM DIISI");
             txtChecker.Foreground = checker.Length > 0
                 ? new SolidColorBrush(Color.FromRgb(0x37, 0x41, 0x51))
@@ -130,13 +148,28 @@ namespace LineProductionWPF
         }
 
         // ---------- data in ----------
-        private async Task PickFirstLine()
+        /// <summary>
+        /// App start: opens the line this PC used last (AppSettings.LastLineId), even when it has no job today
+        /// (then it shows TIDAK ADA JADWAL and keeps checking, so the jobs appear as soon as DailyScheduler saves them).
+        /// It never jumps to another line by itself, so scans can't go to the wrong line.
+        /// First start (no saved line, or the line was deleted): the line picker opens.
+        /// </summary>
+        private async Task OpenStartLine()
         {
             try
             {
+                int savedId = AppSettings.Current.LastLineId;
+                if (savedId > 0)
+                {
+                    var all = await Task.Run(() => SchedulerDb.LoadLines());
+                    KanbanLine? saved = all.FirstOrDefault(l => l.Id == savedId);
+                    if (saved != null) { SelectLine(saved); return; }
+                }
+
                 var lines = await Task.Run(() => SchedulerDb.LoadScheduledLines(_date));
-                if (lines.Count > 0) SelectLine(lines[0]);
-                else ShowNoSchedule();
+                if (lines.Count == 0) { ShowNoSchedule(); return; }
+                txtStatus.Text = "Pilih line untuk PC ini.";
+                ShowLinePicker(lines);
             }
             catch (Exception ex)
             {
@@ -155,7 +188,13 @@ namespace LineProductionWPF
         {
             _line = line;
             _date = DateTime.Today;
+            _jobsRead = false;
             NomorLine.Text = line.Name;
+            if (AppSettings.Current.LastLineId != line.Id)
+            {
+                AppSettings.Current.LastLineId = line.Id;   // the same line opens next time
+                AppSettings.Save();
+            }
             if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();   // web tab is open: show the new line
             _jobs = new List<KanbanJob>();
             _terimaBoxRows.Clear();
@@ -167,6 +206,8 @@ namespace LineProductionWPF
             UpdatePauseButton();
             ResetScanPanel();
             _lastRead = DateTime.MinValue;   // read right away
+            UpdateCheckerText();
+            AskChecker();
             Tick();
         }
 
@@ -178,6 +219,9 @@ namespace LineProductionWPF
             if (_line != null && _date != DateTime.Today)   // midnight: a new day, a new schedule
             {
                 _date = DateTime.Today;
+                _jobsRead = false;
+                UpdateCheckerText();   // yesterday's Checker is no longer valid
+                AskChecker();
                 _jobs = new List<KanbanJob>();
                 _terimaBoxRows.Clear();
                 _labelStatus.Clear();
@@ -225,6 +269,7 @@ namespace LineProductionWPF
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
+                        _jobsRead = true;
                         if (completedBoxes != null)
                             SyncTerimaBoxRows(completedBoxes);
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
@@ -366,7 +411,8 @@ namespace LineProductionWPF
             _syncBoxProgress = false;
 
             UpdateCustomer(_current?.Customer);
-            PartNomor.Text = _current?.PartNumber ?? "-";
+            PartNomor.Text = _current?.PartNumber
+                             ?? (_line != null && _jobsRead && _jobs.Count == 0 ? "TIDAK ADA JADWAL HARI INI" : "-");
             Posisi.Text = _current == null || string.IsNullOrWhiteSpace(_current.Posisi) ? "-" : _current.Posisi;
             PartHeader.Text = _current == null || string.IsNullOrWhiteSpace(_current.Part) ? "-" : _current.Part;
             Model.Text = _current == null || string.IsNullOrWhiteSpace(_current.Model) ? "-" : _current.Model;
@@ -530,7 +576,7 @@ namespace LineProductionWPF
                 string? printLogError = null;
                 if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && !string.IsNullOrEmpty(result.BoxSerial))
                 {
-                    string checker = AppSettings.Current.TodayChecker;
+                    string checker = AppSettings.Current.CheckerFor(p.Line.Id);
                     var printResult = BoxLabelPrinter.Print(
                         customer:     p.Job.Customer,
                         model:        p.Job.Model,
@@ -755,7 +801,7 @@ namespace LineProductionWPF
         {
             ApplyFit(new Size(fitHost.ActualWidth, fitHost.ActualHeight));
             txtScan.Focus();
-            await PickFirstLine();
+            await OpenStartLine();
         }
 
         private void Window_Activated(object sender, EventArgs e)
@@ -1057,10 +1103,18 @@ namespace LineProductionWPF
 
             if (lines.Count == 0)
             {
-                ShowNoSchedule();
+                // Keep the line that is open (it may get a schedule later); only show that there is nothing to switch to.
+                if (_line == null) ShowNoSchedule();
+                else txtStatus.Text = "Tidak ada line yang punya jadwal hari ini.";
                 return;
             }
 
+            ShowLinePicker(lines);
+        }
+
+        /// <summary>Menu under the line name with the lines that have a schedule today.</summary>
+        private void ShowLinePicker(List<KanbanLine> lines)
+        {
             var menu = new ContextMenu
             {
                 PlacementTarget = bdNomorLine,

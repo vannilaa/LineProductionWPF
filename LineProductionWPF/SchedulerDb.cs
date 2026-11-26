@@ -372,6 +372,19 @@ namespace LineProductionWPF
             return true;
         }
 
+        /// <summary>dbo.box.print_count of a box of this line (0 = label never printed), or null when the box is not found.</summary>
+        public static int? GetBoxPrintCount(string boxSerial, int lineProductionId)
+        {
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText = "SELECT print_count FROM dbo.box WHERE serial = @serial AND line_production_id = @lp";
+            cmd.Parameters.AddWithValue("@serial", boxSerial);
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
+            object? v = cmd.ExecuteScalar();
+            return v == null || v is DBNull ? null : Convert.ToInt32(v);
+        }
+
         private static string? Trunc(string? value, int max) =>
             value == null ? null : (value.Length <= max ? value : value.Substring(0, max));
 

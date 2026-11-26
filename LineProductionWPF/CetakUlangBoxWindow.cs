@@ -45,6 +45,23 @@ namespace LineProductionWPF
         private readonly TextBlock _txtError;
         private readonly Button _btnPrint;
 
+        // First print: the box never got a label (auto-print skipped). Then it is not a reprint, so no reason is asked
+        // and it is saved like the first print of print_job (reprint_reason NULL).
+        private readonly TextBlock _reasonLabel = new TextBlock { Text = "Alasan cetak ulang (wajib):", FontWeight = FontWeights.SemiBold };
+        private readonly TextBlock _firstPrintInfo = new TextBlock
+        {
+            Text = "Cetak pertama — label box ini belum pernah tercetak, jadi tidak perlu alasan.",
+            Foreground = new SolidColorBrush(Color.FromRgb(0x1D, 0x4E, 0xD8)),
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 10),
+            Visibility = Visibility.Collapsed
+        };
+        private bool _firstPrint;
+        private int _checkVersion;
+        private readonly System.Windows.Threading.DispatcherTimer _checkTimer =
+            new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(400) };
+
         /// <summary>Serial of the box whose label was printed (set when the dialog returns true).</summary>
         public string? PrintedSerial { get; private set; }
 
@@ -98,7 +115,8 @@ namespace LineProductionWPF
             root.Children.Add(_txtAuth);
 
             // Alasan cetak ulang (wajib) — same as DailyScheduler ReprintDialog
-            root.Children.Add(new TextBlock { Text = "Alasan cetak ulang (wajib):", FontWeight = FontWeights.SemiBold });
+            root.Children.Add(_firstPrintInfo);
+            root.Children.Add(_reasonLabel);
             foreach (string r in Reasons) _reason.Items.Add(r);
             root.Children.Add(_reason);
 
@@ -145,7 +163,8 @@ namespace LineProductionWPF
 
             Content = root;
 
-            _txtQr.TextChanged += (_, _) => UpdatePrintEnabled();
+            _txtQr.TextChanged += (_, _) => { _checkTimer.Stop(); _checkTimer.Start(); UpdatePrintEnabled(); };
+            _checkTimer.Tick += async (_, _) => { _checkTimer.Stop(); await CheckFirstPrint(); };
             _txtAuth.PasswordChanged += (_, _) => UpdatePrintEnabled();
             _reason.SelectionChanged += (_, _) => UpdatePrintEnabled();
             _note.TextChanged += (_, _) => UpdatePrintEnabled();
@@ -153,9 +172,26 @@ namespace LineProductionWPF
             Loaded += (_, _) =>
             {
                 UpdatePrintEnabled();
+                _ = CheckFirstPrint();
                 if (string.IsNullOrWhiteSpace(_txtQr.Text)) _txtQr.Focus();
                 else _txtAuth.Focus();
             };
+        }
+
+        /// <summary>Looks up whether the typed box ever printed; a never-printed box hides the reason.</summary>
+        private async Task CheckFirstPrint()
+        {
+            string qr = _txtQr.Text.Trim();
+            int version = ++_checkVersion;
+            bool first = false;
+            if (qr.Length > 0)
+            {
+                try { first = await Task.Run(() => SchedulerDb.GetBoxPrintCount(qr, _lineId)) == 0; }
+                catch { first = false; }   // unknown: ask the reason, the save decides anyway
+            }
+            if (version != _checkVersion) return;   // the QR changed again meanwhile
+            _firstPrint = first;
+            UpdatePrintEnabled();
         }
 
         private void UpdatePrintEnabled()
@@ -163,12 +199,16 @@ namespace LineProductionWPF
             string? reason = _reason.SelectedItem as string;
             bool isOther = reason == OtherReason;
 
-            _noteLabel.Visibility = isOther ? Visibility.Visible : Visibility.Collapsed;
-            _note.Visibility = isOther ? Visibility.Visible : Visibility.Collapsed;
+            _firstPrintInfo.Visibility = _firstPrint ? Visibility.Visible : Visibility.Collapsed;
+            _reasonLabel.Visibility = _firstPrint ? Visibility.Collapsed : Visibility.Visible;
+            _reason.Visibility = _firstPrint ? Visibility.Collapsed : Visibility.Visible;
+            _noteLabel.Visibility = isOther && !_firstPrint ? Visibility.Visible : Visibility.Collapsed;
+            _note.Visibility = isOther && !_firstPrint ? Visibility.Visible : Visibility.Collapsed;
+            _btnPrint.Content = _firstPrint ? "Cetak" : "Cetak ulang";
 
             bool hasQr = !string.IsNullOrWhiteSpace(_txtQr.Text);
             bool hasAuth = !string.IsNullOrWhiteSpace(_txtAuth.Password);
-            bool hasReason = reason != null && (!isOther || !string.IsNullOrWhiteSpace(_note.Text));
+            bool hasReason = _firstPrint || (reason != null && (!isOther || !string.IsNullOrWhiteSpace(_note.Text)));
 
             _btnPrint.IsEnabled = hasQr && hasAuth && hasReason;
         }
@@ -185,15 +225,15 @@ namespace LineProductionWPF
 
             string qr = _txtQr.Text.Trim();
             string auth = _txtAuth.Password.Trim();
-            string? reason = _reason.SelectedItem as string;
-            string? note = string.IsNullOrWhiteSpace(_note.Text) ? null : _note.Text.Trim();
+            string? reason = _firstPrint ? null : _reason.SelectedItem as string;
+            string? note = _firstPrint || string.IsNullOrWhiteSpace(_note.Text) ? null : _note.Text.Trim();
 
-            if (qr.Length == 0 || auth.Length == 0 || reason == null) return;
+            if (qr.Length == 0 || auth.Length == 0 || (!_firstPrint && reason == null)) return;
 
-            string checker = AppSettings.Current.TodayChecker;
+            string checker = AppSettings.Current.CheckerFor(_lineId);
             if (checker.Length == 0)
             {
-                ShowError("Nama Checker hari ini belum diisi. Isi dulu lewat tombol Pengaturan di dashboard.");
+                ShowError("Nama Checker line ini belum diisi hari ini. Isi dulu lewat tombol Pengaturan di dashboard.");
                 return;
             }
 
@@ -217,7 +257,7 @@ namespace LineProductionWPF
                     return;
                 }
 
-                Reason = reason;
+                Reason = reason ?? "";
                 Note = note;
 
                 var printResult = BoxLabelPrinter.Print(
