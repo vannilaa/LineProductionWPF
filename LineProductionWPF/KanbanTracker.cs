@@ -29,7 +29,8 @@ namespace LineProductionWPF
     ///  - Time is WORKING time (see WorkCalendar): breaks and time outside the shift do not count.
     ///  - The first job starts at the first working moment of the day, or when the schedule was created if that was later.
     ///    Each later job starts when the previous job really finished (the time of its last scan in the database). A job
-    ///    added to today's schedule starts no earlier than its added_at time, matching DailyScheduler.
+    ///    added to today's schedule starts no earlier than its added_at time, and no earlier than the Mulai (start_time) picked in
+    ///    DailyScheduler, matching DailyScheduler.
     ///  - Count = working seconds since the job started x pcs per hour / 3600, never above Jumlah, frozen when the job
     ///    completes. "Jeda Counter" takes the paused time out of the count (the Count board only, not the job times).
     ///  - Job times: finished = real start / end. Running = expected end from the pieces still to scan at the planned rate.
@@ -133,7 +134,7 @@ namespace LineProductionWPF
             n.Current = current ?? jobs[jobs.Count - 1];
 
             var inputs = jobs.Select(job => new ScheduleJobTimeInput(
-                job.Jumlah, job.Target, job.Discan, job.LastScanAt, job.AddedAt)).ToList();
+                job.Jumlah, job.Target, job.Discan, job.LastScanAt, job.AddedAt, job.StartTime)).ToList();
             IReadOnlyList<ScheduleJobTimeResult> timings = ScheduleTimeCalculator.Calculate(
                 inputs, _date, jobs[0].ScheduleCreatedAt, now);
 

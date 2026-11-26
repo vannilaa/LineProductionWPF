@@ -49,6 +49,7 @@ namespace LineProductionWPF
         public int ScheduleVersion { get; set; }            // schedule.version: 1 when created, +1 with every edit in DailyScheduler (same for every job of a schedule)
         public DateTime? LastScanAt { get; set; }           // scanned_at of the latest scan of this row
         public DateTime? AddedAt { get; set; }              // schedule_item.added_at: when this job was added to the schedule
+        public TimeSpan? StartTime { get; set; }            // schedule_item.start_time: the Mulai picked by hand in DailyScheduler (null = Otomatis, after the job before it)
         public string OpenBoxSerial { get; set; } = "";     // name of the box that is being filled now ("" = no open box / no name)
 
         // shown in the job table
@@ -240,7 +241,7 @@ namespace LineProductionWPF
             // its stickers, as before. Boxes stay per barcode (ASSUMPTION, see RecordStickerScan).
             cmd.CommandText =
                 "WITH items AS ( " +
-                "  SELECT i.urutan, i.barcode, i.jumlah, s.tanggal, s.line_production_id, s.created_at, s.version, i.added_at, " +
+                "  SELECT i.urutan, i.barcode, i.jumlah, s.tanggal, s.line_production_id, s.created_at, s.version, i.added_at, i.start_time, " +
                 "         SUM(i.jumlah) OVER (PARTITION BY i.barcode ORDER BY i.urutan ROWS UNBOUNDED PRECEDING) - i.jumlah AS first_off, " +
                 "         CAST(ROW_NUMBER() OVER (PARTITION BY i.barcode ORDER BY i.urutan) AS INT) AS occurrence, " +
                 "         COUNT(*) OVER (PARTITION BY i.barcode) AS same_rows, " +
@@ -260,7 +261,7 @@ namespace LineProductionWPF
                 "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at, " +
                 "       (SELECT TOP (1) b.serial FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
                 "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC), " +
-                "       it.version, p.model, it.added_at " +
+                "       it.version, p.model, it.added_at, it.start_time " +
                 "FROM items it " +
                 "LEFT JOIN product p ON p.barcode = it.barcode " +
                 "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
@@ -305,7 +306,8 @@ namespace LineProductionWPF
                     OpenBoxSerial = r.IsDBNull(20) ? "" : r.GetString(20),
                     ScheduleVersion = r.GetInt32(21),
                     Model = r.IsDBNull(22) ? "" : r.GetString(22).Trim(),
-                    AddedAt = r.IsDBNull(23) ? null : r.GetDateTime(23)
+                    AddedAt = r.IsDBNull(23) ? null : r.GetDateTime(23),
+                    StartTime = r.IsDBNull(24) ? null : r.GetTimeSpan(24)
                 });
             }
             return list;
