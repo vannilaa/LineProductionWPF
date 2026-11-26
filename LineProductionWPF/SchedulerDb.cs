@@ -695,4 +695,32 @@ namespace LineProductionWPF
             }
         }
     }
+
+    // ---- Terima Box / Pallet tab row ----
+    /// <summary>
+    /// One completed box that is shown in the "Terima Box / Pallet" grid.
+    /// </summary>
+    public class ScannedBoxRow
+    {
+        /// <summary>Box serial / name, e.g. B261119.13.9CE.001</summary>
+        public string BoxSerial { get; set; } = "";
+
+        /// <summary>Part number of the job this box belongs to.</summary>
+        public string PartNumber { get; set; } = "";
+
+        /// <summary>Model of the job.</summary>
+        public string Model { get; set; } = "";
+
+        /// <summary>Posisi + Part joined (mirrors KanbanJob.PosisiPart).</summary>
+        public string PosisiPart { get; set; } = "";
+
+        /// <summary>Time the box was completed (last scan that closed the box), shown as HH:mm.</summary>
+        public string JamTutupBox { get; set; } = "";
+
+        /// <summary>WHS receipt status. Defaults to "Belum scan WHS".</summary>
+        public string Status { get; set; } = "Belum scan WHS";
+
+        /// <summary>Time the warehouse received / scanned the box. Left blank until filled in.</summary>
+        public string JamTerima { get; set; } = "";
+    }
 }

@@ -38,6 +38,9 @@ namespace LineProductionWPF
 
         // ---- scan panel (box / pallet of the current job) ----
         private readonly ObservableCollection<string> _scans = new ObservableCollection<string>();
+
+        // ---- Terima Box / Pallet tab ----
+        private readonly ObservableCollection<ScannedBoxRow> _terimaBoxRows = new ObservableCollection<ScannedBoxRow>();
         private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
         private readonly List<string> _scanHistory = new List<string>();
         private int _scanHistoryPosition;
@@ -68,6 +71,7 @@ namespace LineProductionWPF
             webHost.LayoutUpdated += (s, e) => UpdateWebBounds();
             webHost.IsVisibleChanged += (s, e) => UpdateWebBounds();
             lstScans.ItemsSource = _scans;
+            dgvTerimaBox.ItemsSource = _terimaBoxRows;
 
             _popupTimer.Tick += (s, e) => CloseScanPopup();
 
@@ -492,6 +496,17 @@ namespace LineProductionWPF
                 {
                     _clearListTimer.Stop();
                     _clearListTimer.Start();
+
+                    // Add the completed box to the Terima Box / Pallet grid.
+                    _terimaBoxRows.Insert(0, new ScannedBoxRow
+                    {
+                        BoxSerial  = result.BoxSerial,
+                        PartNumber = p.Job.PartNumber,
+                        Model      = p.Job.Model,
+                        PosisiPart = p.Job.PosisiPart,
+                        JamTutupBox = DateTime.Now.ToString("HH:mm"),
+                        // Status defaults to "Belum scan WHS"; JamTerima left blank.
+                    });
                 }
 
                 txtStatus.Text = result.Message;
