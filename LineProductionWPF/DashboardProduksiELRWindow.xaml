@@ -572,10 +572,22 @@
             <!-- ================= FOOTER ================= -->
             <Border Grid.Row="3" Background="White" Padding="24,8">
                 <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
                     <TextBlock x:Name="txtStatus" VerticalAlignment="Center" FontSize="16" Foreground="#6B7280"
-                           TextWrapping="Wrap" Margin="0,0,180,0"/>
-                    <Button x:Name="btnKeluar" Content="KELUAR" Style="{StaticResource ExitButton}"
-                        HorizontalAlignment="Right" Click="btnKeluar_Click"/>
+                           TextWrapping="Wrap" Margin="0,0,16,0"/>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <!-- Checker of today (printed on the box label); red "BELUM DIISI" when not entered yet -->
+                        <TextBlock x:Name="txtChecker" Text="Checker: -" FontSize="16" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <!-- Pengaturan: Checker, printer label box, ESP (COM). Not focusable: the scan box keeps the focus. -->
+                        <Button x:Name="btnSettings" Content="&#x2699; Pengaturan" Focusable="False" FontSize="16"
+                                Padding="14,6" Margin="0,0,12,0" VerticalAlignment="Center" Click="btnSettings_Click"/>
+                        <Button x:Name="btnKeluar" Content="KELUAR" Style="{StaticResource ExitButton}"
+                            Click="btnKeluar_Click"/>
+                    </StackPanel>
                 </Grid>
             </Border>
         </Grid>

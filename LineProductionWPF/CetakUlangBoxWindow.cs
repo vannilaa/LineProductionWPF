@@ -51,6 +51,9 @@ namespace LineProductionWPF
         public string Reason { get; private set; } = "";
         public string? Note { get; private set; }
 
+        /// <summary>Set when the label printed but saving it to box_print_job failed (the dialog still returns true).</summary>
+        public string? LogError { get; private set; }
+
         public CetakUlangBoxWindow(int lineId, string? defaultBoxSerial = null)
         {
             _lineId = lineId;
@@ -187,6 +190,13 @@ namespace LineProductionWPF
 
             if (qr.Length == 0 || auth.Length == 0 || reason == null) return;
 
+            string checker = AppSettings.Current.TodayChecker;
+            if (checker.Length == 0)
+            {
+                ShowError("Nama Checker hari ini belum diisi. Isi dulu lewat tombol Pengaturan di dashboard.");
+                return;
+            }
+
             _btnPrint.IsEnabled = false;
             try
             {
@@ -220,6 +230,7 @@ namespace LineProductionWPF
                     boxSerial:   box.BoxSerial,
                     lineName:    box.LineName,
                     prodDate:    box.ProdDate,
+                    checkerName: checker,
                     askOnPaperMismatch: true);
 
                 if (printResult != BoxLabelPrinter.PrintResult.Printed)
@@ -228,6 +239,13 @@ namespace LineProductionWPF
                               ". Periksa printer lalu coba lagi.");
                     return;
                 }
+
+                // Save the print. A box that never printed gets its FIRST print here (reason/note NULL, like print_job);
+                // otherwise it is a reprint with the chosen reason and note.
+                string printer = BoxLabelPrinter.LastPrinterName ?? "";
+                string serial = box.BoxSerial;
+                try { await Task.Run(() => SchedulerDb.RecordBoxPrint(serial, _lineId, checker, printer, reason, note)); }
+                catch (Exception ex) { LogError = ex.Message; }
 
                 PrintedSerial = box.BoxSerial;
                 DialogResult = true;

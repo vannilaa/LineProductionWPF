@@ -41,7 +41,8 @@ namespace LineProductionWPF
 
         // ---- Terima Box / Pallet tab ----
         private readonly ObservableCollection<ScannedBoxRow> _terimaBoxRows = new ObservableCollection<ScannedBoxRow>();
-        // Label print result per box serial for this session (kept across grid reloads; not stored in the database).
+        // Why a label did not print in this session (kept across grid reloads). Whether a box was printed at all comes
+        // from the database (box.print_count); this only adds the reason, e.g. "Printer tidak siap".
         private readonly Dictionary<string, string> _labelStatus = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
         private readonly List<string> _scanHistory = new List<string>();
@@ -89,6 +90,43 @@ namespace LineProductionWPF
 
             UpdateClock();
             Render();
+
+            Loaded += (s, e) =>
+            {
+                serialMonitor.ApplySettings(AppSettings.Current, connectNow: AppSettings.Current.EspAutoConnect);
+                UpdateCheckerText();
+                if (AppSettings.Current.TodayChecker.Length == 0)
+                    Dispatcher.BeginInvoke(new Action(() => OpenSettings()), DispatcherPriority.ApplicationIdle);
+            };
+        }
+
+        // ---------- Pengaturan (gear): Checker, printer, ESP COM ----------
+        private void btnSettings_Click(object sender, RoutedEventArgs e) => OpenSettings();
+
+        private void OpenSettings()
+        {
+            _pickerOpen = true;
+            try
+            {
+                var dlg = new SettingsWindow(serialMonitor) { Owner = this };
+                dlg.ShowDialog();
+            }
+            finally
+            {
+                _pickerOpen = false;
+                UpdateCheckerText();
+                txtScan.Focus();
+            }
+        }
+
+        /// <summary>"Checker: name" next to the gear; red when no Checker was entered today.</summary>
+        private void UpdateCheckerText()
+        {
+            string checker = AppSettings.Current.TodayChecker;
+            txtChecker.Text = "Checker: " + (checker.Length > 0 ? checker : "BELUM DIISI");
+            txtChecker.Foreground = checker.Length > 0
+                ? new SolidColorBrush(Color.FromRgb(0x37, 0x41, 0x51))
+                : new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
         }
 
         // ---------- data in ----------
@@ -489,8 +527,10 @@ namespace LineProductionWPF
                 // a skipped/failed print is shown in the Label column so it can be printed from Cetak Ulang.
                 string? autoPrintStatus = null;
                 bool labelMissing = false;
+                string? printLogError = null;
                 if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && !string.IsNullOrEmpty(result.BoxSerial))
                 {
+                    string checker = AppSettings.Current.TodayChecker;
                     var printResult = BoxLabelPrinter.Print(
                         customer:     p.Job.Customer,
                         model:        p.Job.Model,
@@ -500,11 +540,20 @@ namespace LineProductionWPF
                         qtyPerBox:    p.Job.QtyPerBox,
                         boxSerial:    result.BoxSerial,
                         lineName:     p.Line.Name,
-                        prodDate:     _date);   // schedule date = box.tanggal, same date a reprint uses
+                        prodDate:     _date,    // schedule date = box.tanggal, same date a reprint uses
+                        checkerName:  checker);
                     autoPrintStatus = BoxLabelPrinter.Describe(printResult);
                     labelMissing = printResult != BoxLabelPrinter.PrintResult.Printed;
                     _labelStatus[result.BoxSerial] = autoPrintStatus;
                     if (labelMissing) System.Media.SystemSounds.Exclamation.Play();
+                    else
+                    {
+                        // Printed: save it (first print -> box_print_job with reprint_reason NULL). A skipped print saves nothing.
+                        string serial = result.BoxSerial, printer = BoxLabelPrinter.LastPrinterName ?? "";
+                        int lineId = p.Line.Id;
+                        try { await Task.Run(() => SchedulerDb.RecordBoxPrint(serial, lineId, checker, printer, null, null)); }
+                        catch (Exception ex) { printLogError = ex.Message; }
+                    }
                 }
 
                 // The job may have changed during the database call: the scan is saved, but this panel is another job's.
@@ -553,7 +602,9 @@ namespace LineProductionWPF
 
                 txtStatus.Text = labelMissing
                     ? result.Message + "  —  Label box " + result.BoxSerial + " TIDAK tercetak (" + autoPrintStatus + "). Cetak lewat Cetak Ulang."
-                    : result.Message;
+                    : printLogError != null
+                        ? result.Message + "  —  Label tercetak, tapi riwayat cetak gagal disimpan: " + printLogError
+                        : result.Message;
                 UpdateScanCounters();
             }
             catch (Exception ex)
@@ -911,8 +962,13 @@ namespace LineProductionWPF
         /// </summary>
         private void SyncTerimaBoxRows(List<ScannedBoxRow> fresh)
         {
+            // Printed according to the database (survives a restart, also when printed on another PC) -> "Tercetak".
+            // Otherwise this session's result (also covers a print whose database save is still running), else "Belum tercetak".
+            string printed = BoxLabelPrinter.Describe(BoxLabelPrinter.PrintResult.Printed);
             foreach (var row in fresh)
-                row.LabelStatus = _labelStatus.TryGetValue(row.BoxSerial, out var st) ? st : "";
+                row.LabelStatus = row.PrintedInDb ? printed
+                                : _labelStatus.TryGetValue(row.BoxSerial, out var st) ? st
+                                : "Belum tercetak";
 
             bool same = fresh.Count == _terimaBoxRows.Count;
             for (int i = 0; same && i < fresh.Count; i++)
@@ -946,7 +1002,10 @@ namespace LineProductionWPF
                     foreach (var row in _terimaBoxRows)
                         if (string.Equals(row.BoxSerial, dlg.PrintedSerial, StringComparison.OrdinalIgnoreCase))
                             row.LabelStatus = ok;
-                    txtStatus.Text = "Label box " + dlg.PrintedSerial + " berhasil dicetak.";
+                    txtStatus.Text = dlg.LogError == null
+                        ? "Label box " + dlg.PrintedSerial + " berhasil dicetak."
+                        : "Label box " + dlg.PrintedSerial + " tercetak, tapi riwayat cetak gagal disimpan: " + dlg.LogError;
+                    _lastRead = DateTime.MinValue;   // re-read the grid (print_count changed)
                 }
             }
             finally

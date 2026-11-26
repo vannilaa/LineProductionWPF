@@ -266,7 +266,8 @@ namespace LineProductionWPF
                 "       ISNULL(p.model, N''), " +
                 "       ISNULL(p.position, N''), " +
                 "       ISNULL(p.part, N''), " +
-                "       b.closed_at " +
+                "       b.closed_at, " +
+                "       b.print_count " +
                 "FROM dbo.box b " +
                 "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
                 "WHERE b.tanggal = @tanggal AND b.line_production_id = @lp AND b.closed_at IS NOT NULL " +
@@ -282,6 +283,7 @@ namespace LineProductionWPF
                 string part = r.GetString(4).Trim();
                 string posisiPart = string.Join(" - ", new[] { posisi, part }.Where(x => !string.IsNullOrWhiteSpace(x) && x != "-"));
                 DateTime closedAt = r.GetDateTime(5);
+                int printCount = Convert.ToInt32(r.GetValue(6));
 
                 list.Add(new ScannedBoxRow
                 {
@@ -289,11 +291,77 @@ namespace LineProductionWPF
                     PartNumber  = r.GetString(1).Trim(),
                     Model       = r.GetString(2).Trim(),
                     PosisiPart  = posisiPart,
-                    JamTutupBox = closedAt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+                    JamTutupBox = closedAt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                    PrintedInDb = printCount > 0
                 });
             }
             return list;
         }
+
+        /// <summary>
+        /// Saves one box label print (sql/010_box_print_job.sql in DailyScheduler): adds a box_print_job row and
+        /// updates the counters on dbo.box. Like print_job: the first print of a box has is_reprint = 0 and
+        /// reason/note NULL (even when it was printed from Cetak Ulang because the auto-print was skipped);
+        /// every later print is a reprint with reprint_count 1, 2, ... and needs a reason.
+        /// Call only AFTER the label really printed. Returns false when the box is not found.
+        /// </summary>
+        public static bool RecordBoxPrint(string boxSerial, int lineProductionId, string checkerName, string? printer,
+                                          string? reason, string? note)
+        {
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var tx = con.BeginTransaction();
+
+            int boxId, printCount;
+            using (var cmd = Command(con, tx,
+                "SELECT id, print_count FROM dbo.box WITH (UPDLOCK, HOLDLOCK) WHERE serial = @serial AND line_production_id = @lp"))
+            {
+                cmd.Parameters.AddWithValue("@serial", boxSerial);
+                cmd.Parameters.AddWithValue("@lp", lineProductionId);
+                using var r = cmd.ExecuteReader();
+                if (!r.Read()) return false;
+                boxId = r.GetInt32(0);
+                printCount = r.GetInt32(1);
+            }
+
+            bool isReprint = printCount > 0;
+            int jobId;
+            using (var cmd = Command(con, tx,
+                "INSERT INTO dbo.box_print_job (box_id, printer, is_reprint, reprint_count, reprint_reason, reprint_note, " +
+                "                               checker_name, windows_user, machine_name) " +
+                "OUTPUT INSERTED.id " +
+                "VALUES (@box, @printer, @isReprint, @count, @reason, @note, @checker, @user, @machine)"))
+            {
+                cmd.Parameters.AddWithValue("@box", boxId);
+                cmd.Parameters.AddWithValue("@printer", (object?)Trunc(printer, 256) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@isReprint", isReprint);
+                cmd.Parameters.AddWithValue("@count", printCount);   // 0 = first print, 1 = first reprint, ...
+                cmd.Parameters.AddWithValue("@reason", isReprint ? (object?)Trunc(reason ?? "-", 100) ?? DBNull.Value : DBNull.Value);
+                cmd.Parameters.AddWithValue("@note", isReprint ? (object?)Trunc(note, 500) ?? DBNull.Value : DBNull.Value);
+                cmd.Parameters.AddWithValue("@checker", Trunc(checkerName ?? "", 100) ?? "");
+                cmd.Parameters.AddWithValue("@user", Trunc(Environment.UserName, 100) ?? "");
+                cmd.Parameters.AddWithValue("@machine", Trunc(Environment.MachineName, 100) ?? "");
+                jobId = Convert.ToInt32(cmd.ExecuteScalar());
+            }
+
+            using (var cmd = Command(con, tx,
+                "UPDATE dbo.box SET print_count = print_count + 1, checker_name = @checker, " +
+                "  first_printed_at = ISNULL(first_printed_at, SYSDATETIME()), last_printed_at = SYSDATETIME(), " +
+                "  first_print_job_id = ISNULL(first_print_job_id, @job), last_print_job_id = @job " +
+                "WHERE id = @box"))
+            {
+                cmd.Parameters.AddWithValue("@checker", Trunc(checkerName ?? "", 100) ?? "");
+                cmd.Parameters.AddWithValue("@job", jobId);
+                cmd.Parameters.AddWithValue("@box", boxId);
+                cmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            return true;
+        }
+
+        private static string? Trunc(string? value, int max) =>
+            value == null ? null : (value.Length <= max ? value : value.Substring(0, max));
 
         public static List<KanbanLine> LoadLines()
         {
@@ -825,9 +893,12 @@ namespace LineProductionWPF
         public string JamTerima { get; set; } = "";
 
         private string _labelStatus = "";
+        /// <summary>True when dbo.box.print_count > 0 (the label was printed at least once, any PC, any session).</summary>
+        public bool PrintedInDb { get; set; }
+
         /// <summary>
-        /// Label print result in this session ("Tercetak", "Printer tidak siap", ...).
-        /// Empty = unknown (box closed before the app was opened).
+        /// Label column: "Tercetak", or why it did not print ("Printer tidak siap", ... from this session),
+        /// or "Belum tercetak" when the database says it never printed.
         /// </summary>
         public string LabelStatus
         {
