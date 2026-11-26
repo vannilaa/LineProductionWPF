@@ -967,9 +967,24 @@ namespace LineProductionWPF
             // Otherwise this session's result (also covers a print whose database save is still running), else "Belum tercetak".
             string printed = BoxLabelPrinter.Describe(BoxLabelPrinter.PrintResult.Printed);
             foreach (var row in fresh)
-                row.LabelStatus = row.PrintedInDb ? printed
-                                : _labelStatus.TryGetValue(row.BoxSerial, out var st) ? st
-                                : "Belum tercetak";
+            {
+                if (row.PrintedInDb)
+                {
+                    if (row.ReprintCount > 0)
+                    {
+                        string reason = string.IsNullOrWhiteSpace(row.ReprintReason) ? "" : ": " + row.ReprintReason;
+                        row.LabelStatus = $"Cetak ulang #{row.ReprintCount}{reason}";
+                    }
+                    else
+                    {
+                        row.LabelStatus = printed;
+                    }
+                }
+                else
+                {
+                    row.LabelStatus = _labelStatus.TryGetValue(row.BoxSerial, out var st) ? st : "Belum tercetak";
+                }
+            }
 
             bool same = fresh.Count == _terimaBoxRows.Count;
             for (int i = 0; same && i < fresh.Count; i++)

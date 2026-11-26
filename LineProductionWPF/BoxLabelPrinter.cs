@@ -65,9 +65,9 @@ namespace LineProductionWPF
             string boxSerial,
             string lineName,
             DateTime prodDate,
-            bool qrModelPartNumber = false,
             string checkerName,
-            bool askOnPaperMismatch = false)
+            bool askOnPaperMismatch = false,
+            bool qrModelPartNumber = false)
         {
             LastPrinterName = null;
             try
@@ -103,8 +103,7 @@ namespace LineProductionWPF
 
                 var visual = BuildLabel(
                     customer, model, jobNo, partNumber, productName,
-                    qtyPerBox, boxSerial, lineName, prodDate, qrModelPartNumber);
-                    qtyPerBox, boxSerial, lineName, prodDate, checkerName);
+                    qtyPerBox, boxSerial, lineName, prodDate, checkerName, qrModelPartNumber);
 
                 // If the printer's printable area is portrait (taller than wide),
                 // rotate the 90x60mm landscape label 90° so it fills the page without top/bottom whitespace.
@@ -192,8 +191,7 @@ namespace LineProductionWPF
             string customer, string model, string jobNo,
             string partNumber, string productName,
             int qtyPerBox, string boxSerial, string lineName, DateTime prodDate,
-            bool qrModelPartNumber = false)
-            int qtyPerBox, string boxSerial, string lineName, DateTime prodDate, string checkerName)
+            string checkerName, bool qrModelPartNumber = false)
         {
             var borderBrush = Brushes.Black;
             const double lineThickness = 1.5;

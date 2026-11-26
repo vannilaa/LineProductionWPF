@@ -271,9 +271,14 @@ namespace LineProductionWPF
                 "       ISNULL(p.position, N''), " +
                 "       ISNULL(p.part, N''), " +
                 "       b.closed_at, " +
-                "       b.print_count " +
+                "       b.print_count, " +
+                "       ISNULL(bp.reprint_count, 0), " +
+                "       ISNULL(bp.reprint_reason, N''), " +
+                "       ISNULL(bp.checker_name, N'') " +
                 "FROM dbo.box b " +
                 "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
+                "OUTER APPLY (SELECT TOP (1) reprint_count, reprint_reason, checker_name " +
+                "             FROM dbo.box_print_job WHERE box_id = b.id ORDER BY id DESC) bp " +
                 "WHERE b.tanggal = @tanggal AND b.line_production_id = @lp AND b.closed_at IS NOT NULL " +
                 "ORDER BY b.closed_at DESC, b.id DESC";
             cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
@@ -296,7 +301,10 @@ namespace LineProductionWPF
                     Model       = r.GetString(2).Trim(),
                     PosisiPart  = posisiPart,
                     JamTutupBox = closedAt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
-                    PrintedInDb = printCount > 0
+                    PrintedInDb = printCount > 0,
+                    ReprintCount = Convert.ToInt32(r.GetValue(7)),
+                    ReprintReason = r.GetString(8).Trim(),
+                    CheckerName = r.GetString(9).Trim()
                 });
             }
             return list;
@@ -900,6 +908,9 @@ namespace LineProductionWPF
         private string _labelStatus = "";
         /// <summary>True when dbo.box.print_count > 0 (the label was printed at least once, any PC, any session).</summary>
         public bool PrintedInDb { get; set; }
+        public int ReprintCount { get; set; }
+        public string ReprintReason { get; set; } = "";
+        public string CheckerName { get; set; } = "";
 
         /// <summary>
         /// Label column: "Tercetak", or why it did not print ("Printer tidak siap", ... from this session),
@@ -918,11 +929,12 @@ namespace LineProductionWPF
         }
 
         /// <summary>True when the auto-print was skipped or failed and the label still has to be printed.</summary>
-        public bool IsLabelMissing => _labelStatus.Length > 0 && _labelStatus != "Tercetak";
+        public bool IsLabelMissing => !PrintedInDb && _labelStatus.Length > 0 && _labelStatus != "Tercetak";
 
         public bool SameAs(ScannedBoxRow o) =>
             BoxSerial == o.BoxSerial && PartNumber == o.PartNumber && Model == o.Model &&
             PosisiPart == o.PosisiPart && JamTutupBox == o.JamTutupBox &&
-            Status == o.Status && JamTerima == o.JamTerima && LabelStatus == o.LabelStatus;
+            Status == o.Status && JamTerima == o.JamTerima && LabelStatus == o.LabelStatus &&
+            CheckerName == o.CheckerName;
     }
 }
