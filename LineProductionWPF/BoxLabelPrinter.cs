@@ -69,6 +69,11 @@ namespace LineProductionWPF
                     customer, model, jobNo, partNumber, productName,
                     qtyPerBox, boxSerial, lineName, prodDate);
 
+                // If the printer's printable area is portrait (taller than wide),
+                // rotate the 90x60mm landscape label 90° so it fills the page without top/bottom whitespace.
+                if (targetW < targetH)
+                    visual.LayoutTransform = new RotateTransform(90);
+
                 // Wrap in a Viewbox sized to the printer's printable area so it fills the label cleanly.
                 var container = new Viewbox
                 {
@@ -259,7 +264,7 @@ namespace LineProductionWPF
             var qtyGrid = new Grid();
             qtyGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             qtyGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            var qtyLbl = new TextBlock { Text = "QTY", FontSize = 8, FontWeight = FontWeights.Bold };
+            var qtyLbl = new TextBlock { Text = "QTY", FontSize = 10, FontWeight = FontWeights.Bold };
             Grid.SetRow(qtyLbl, 0);
             qtyGrid.Children.Add(qtyLbl);
             var qtyVal = new TextBlock
@@ -285,16 +290,21 @@ namespace LineProductionWPF
             var dateGrid = new Grid();
             dateGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             dateGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-            var dateLbl = new TextBlock { Text = "Prod Date", FontSize = 7.5, FontWeight = FontWeights.Bold };
+            var dateLbl = new TextBlock { Text = "Prod Date", FontSize = 10, FontWeight = FontWeights.Bold };
             Grid.SetRow(dateLbl, 0);
             dateGrid.Children.Add(dateLbl);
-            var dateVal = new TextBlock
+            var dateVal = new Viewbox
             {
-                Text                = prodDate.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture),
-                FontSize            = 13,
-                FontWeight          = FontWeights.Bold,
+                Stretch             = Stretch.Uniform,
+                StretchDirection    = StretchDirection.DownOnly,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center
+                VerticalAlignment   = VerticalAlignment.Center,
+                Child = new TextBlock
+                {
+                    Text       = prodDate.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture),
+                    FontSize   = 13,
+                    FontWeight = FontWeights.Bold
+                }
             };
             Grid.SetRow(dateVal, 1);
             dateGrid.Children.Add(dateVal);
@@ -350,7 +360,7 @@ namespace LineProductionWPF
                 Padding         = new Thickness(3, 2, 3, 2)
             };
             var lotStack = new StackPanel();
-            lotStack.Children.Add(new TextBlock { Text = "Lot #", FontSize = 9, FontWeight = FontWeights.Bold });
+            lotStack.Children.Add(new TextBlock { Text = "Lot #", FontSize = 10, FontWeight = FontWeights.Bold });
             lotStack.Children.Add(new TextBlock
             {
                 Text         = boxSerial.Length > 0 ? boxSerial : "-",
