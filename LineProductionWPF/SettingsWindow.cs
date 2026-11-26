@@ -9,7 +9,7 @@ namespace LineProductionWPF
 {
     /// <summary>
     /// Pengaturan (gear button on the dashboard), saved per PC in AppSettings:
-    ///  - Checker: name of today's checker, printed on every box label and saved in box_print_job / box.checker_name.
+    ///  - Checker: today's checker of the line on the dashboard, printed on every box label and saved in box_print_job / box.checker_name.
     ///  - Printer label box: which printer prints the box labels (empty = Windows default), with its status.
     ///  - ESP (COM): port, baud, line ending, connect automatically when the app starts. Used by the Log Serial / COM tab.
     /// </summary>
@@ -18,6 +18,7 @@ namespace LineProductionWPF
         private const string WindowsDefault = "(Default Windows)";
 
         private readonly SerialMonitorView _serial;
+        private readonly KanbanLine? _line;   // the line on the dashboard: the Checker field is for this line
         private readonly TextBox _txtChecker = new TextBox { FontSize = 16, MaxLength = 100, Margin = new Thickness(0, 4, 0, 2) };
         private readonly ComboBox _cbPrinter = new ComboBox { FontSize = 14, MinWidth = 260 };
         private readonly TextBlock _txtPrinterStatus = new TextBlock { Margin = new Thickness(0, 4, 0, 0) };
@@ -28,9 +29,10 @@ namespace LineProductionWPF
         private readonly TextBlock _txtEspStatus = new TextBlock { Margin = new Thickness(0, 4, 0, 0), Foreground = Brushes.DimGray };
         private readonly TextBlock _txtError = new TextBlock { Foreground = Brushes.Firebrick, TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
 
-        public SettingsWindow(SerialMonitorView serial)
+        public SettingsWindow(SerialMonitorView serial, KanbanLine? line)
         {
             _serial = serial;
+            _line = line;
             AppSettings st = AppSettings.Current;
 
             Title = "Pengaturan";
@@ -43,10 +45,14 @@ namespace LineProductionWPF
 
             // ---- Checker ----
             root.Children.Add(Header("Checker"));
-            root.Children.Add(new TextBlock { Text = "Nama checker shift ini (dicetak di label box):" });
+            root.Children.Add(new TextBlock
+            {
+                Text = line != null ? "Nama checker " + line.Name + " (dicetak di label box):" : "Pilih line dulu, baru Checker bisa diisi."
+            });
             root.Children.Add(_txtChecker);
-            root.Children.Add(Hint("Diminta lagi setiap hari baru. Ganti saat pergantian shift."));
-            _txtChecker.Text = st.TodayChecker;
+            root.Children.Add(Hint("Disimpan per line di PC ini. Ditanya lagi saat aplikasi dibuka, saat ganti line, dan setiap hari baru."));
+            _txtChecker.Text = line != null ? st.CheckerFor(line.Id) : "";
+            _txtChecker.IsEnabled = line != null;
 
             // ---- Printer ----
             root.Children.Add(Header("Printer label box"));
@@ -96,7 +102,7 @@ namespace LineProductionWPF
             root.Children.Add(buttons);
 
             Content = root;
-            Loaded += (s, e) => { _txtChecker.Focus(); _txtChecker.SelectAll(); };
+            Loaded += (s, e) => { if (_line != null) { _txtChecker.Focus(); _txtChecker.SelectAll(); } };
         }
 
         // ---------------- printer ----------------
@@ -140,7 +146,7 @@ namespace LineProductionWPF
         private void Save()
         {
             string checker = (_txtChecker.Text ?? "").Trim();
-            if (checker.Length == 0)
+            if (_line != null && checker.Length == 0)
             {
                 ShowError("Isi nama Checker.");
                 _txtChecker.Focus();
@@ -148,8 +154,7 @@ namespace LineProductionWPF
             }
 
             AppSettings st = AppSettings.Current;
-            st.CheckerName = checker;
-            st.CheckerDate = DateTime.Today.ToString("yyyy-MM-dd");
+            if (_line != null) st.SetChecker(_line.Id, checker);
             st.PrinterName = SelectedPrinter();
             st.EspPort = _cbPort.SelectedItem as string ?? "";
             st.EspBaud = _cbBaud.SelectedItem is int b ? b : 9600;
