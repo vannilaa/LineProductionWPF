@@ -45,6 +45,9 @@ namespace LineProductionWPF
         private readonly TextBlock _txtError;
         private readonly Button _btnPrint;
 
+        /// <summary>Serial of the box whose label was printed (set when the dialog returns true).</summary>
+        public string? PrintedSerial { get; private set; }
+
         public string Reason { get; private set; } = "";
         public string? Note { get; private set; }
 
@@ -196,10 +199,10 @@ namespace LineProductionWPF
                     return;
                 }
 
-                var box = await Task.Run(() => SchedulerDb.LoadBoxForReprint(qr));
+                var box = await Task.Run(() => SchedulerDb.LoadBoxForReprint(qr, _lineId));
                 if (box == null)
                 {
-                    ShowError("Box dengan serial \"" + qr + "\" tidak ditemukan.");
+                    ShowError("Box dengan serial \"" + qr + "\" tidak ditemukan di line ini.");
                     _txtQr.Focus();
                     return;
                 }
@@ -207,7 +210,7 @@ namespace LineProductionWPF
                 Reason = reason;
                 Note = note;
 
-                BoxLabelPrinter.Print(
+                var printResult = BoxLabelPrinter.Print(
                     customer:    box.Customer,
                     model:       box.Model,
                     jobNo:       box.JobNo,
@@ -216,8 +219,17 @@ namespace LineProductionWPF
                     qtyPerBox:   box.QtyPerBox,
                     boxSerial:   box.BoxSerial,
                     lineName:    box.LineName,
-                    prodDate:    box.ProdDate);
+                    prodDate:    box.ProdDate,
+                    askOnPaperMismatch: true);
 
+                if (printResult != BoxLabelPrinter.PrintResult.Printed)
+                {
+                    ShowError("Label tidak tercetak: " + BoxLabelPrinter.Describe(printResult) +
+                              ". Periksa printer lalu coba lagi.");
+                    return;
+                }
+
+                PrintedSerial = box.BoxSerial;
                 DialogResult = true;
             }
             catch (Exception ex)

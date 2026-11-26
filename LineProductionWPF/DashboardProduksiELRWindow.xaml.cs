@@ -41,6 +41,8 @@ namespace LineProductionWPF
 
         // ---- Terima Box / Pallet tab ----
         private readonly ObservableCollection<ScannedBoxRow> _terimaBoxRows = new ObservableCollection<ScannedBoxRow>();
+        // Label print result per box serial for this session (kept across grid reloads; not stored in the database).
+        private readonly Dictionary<string, string> _labelStatus = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
         private readonly List<string> _scanHistory = new List<string>();
         private int _scanHistoryPosition;
@@ -119,6 +121,7 @@ namespace LineProductionWPF
             if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();   // web tab is open: show the new line
             _jobs = new List<KanbanJob>();
             _terimaBoxRows.Clear();
+            _labelStatus.Clear();
             _lastScheduleRevisionVersion = null;
             _scheduleNoticeUntil = DateTime.MinValue;
             _scheduleNoticeText = "";
@@ -139,6 +142,7 @@ namespace LineProductionWPF
                 _date = DateTime.Today;
                 _jobs = new List<KanbanJob>();
                 _terimaBoxRows.Clear();
+                _labelStatus.Clear();
                 _lastScheduleRevisionVersion = null;
                 _scheduleNoticeUntil = DateTime.MinValue;
                 _scheduleNoticeText = "";
@@ -159,7 +163,16 @@ namespace LineProductionWPF
                 try
                 {
                     var jobs = await Task.Run(() => SchedulerDb.LoadJobs(date, line.Id));
-                    var completedBoxes = await Task.Run(() => SchedulerDb.LoadCompletedBoxes(date, line.Id));
+                    // Read separately: a failure here must not stop the job list from refreshing.
+                    List<ScannedBoxRow>? completedBoxes = null;
+                    try
+                    {
+                        completedBoxes = await Task.Run(() => SchedulerDb.LoadCompletedBoxes(date, line.Id));
+                    }
+                    catch
+                    {
+                        // keep the rows already on screen; the next refresh tries again
+                    }
                     SchedulerDb.ScheduleRevision? revision = null;
                     string? revisionReadError = null;
                     try
@@ -174,13 +187,8 @@ namespace LineProductionWPF
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
-                        if (_terimaBoxRows.Count != completedBoxes.Count ||
-                            (completedBoxes.Count > 0 && _terimaBoxRows[0].BoxSerial != completedBoxes[0].BoxSerial))
-                        {
-                            _terimaBoxRows.Clear();
-                            foreach (var box in completedBoxes)
-                                _terimaBoxRows.Add(box);
-                        }
+                        if (completedBoxes != null)
+                            SyncTerimaBoxRows(completedBoxes);
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
                         // otherwise the read is older than the panel.
                         _syncBoxProgress = versionBefore == _scanVersion && !_scanBusy && _scanQueue.Count == 0;
@@ -476,6 +484,29 @@ namespace LineProductionWPF
                 _scanVersion++;
                 _lastRead = DateTime.MinValue;   // refresh the actual production count right away
 
+                // A box was just closed in the database: print its label now, even if the operator switched job
+                // meanwhile (otherwise a closed box would be left without a label). Auto-print never shows a popup;
+                // a skipped/failed print is shown in the Label column so it can be printed from Cetak Ulang.
+                string? autoPrintStatus = null;
+                bool labelMissing = false;
+                if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && !string.IsNullOrEmpty(result.BoxSerial))
+                {
+                    var printResult = BoxLabelPrinter.Print(
+                        customer:     p.Job.Customer,
+                        model:        p.Job.Model,
+                        jobNo:        p.Job.JobNo,
+                        partNumber:   p.Job.PartNumber,
+                        productName:  p.Job.ProductName,
+                        qtyPerBox:    p.Job.QtyPerBox,
+                        boxSerial:    result.BoxSerial,
+                        lineName:     p.Line.Name,
+                        prodDate:     _date);   // schedule date = box.tanggal, same date a reprint uses
+                    autoPrintStatus = BoxLabelPrinter.Describe(printResult);
+                    labelMissing = printResult != BoxLabelPrinter.PrintResult.Printed;
+                    _labelStatus[result.BoxSerial] = autoPrintStatus;
+                    if (labelMissing) System.Media.SystemSounds.Exclamation.Play();
+                }
+
                 // The job may have changed during the database call: the scan is saved, but this panel is another job's.
                 if (!IsActive(p)) return;
 
@@ -507,18 +538,6 @@ namespace LineProductionWPF
                     _clearListTimer.Stop();
                     _clearListTimer.Start();
 
-                    // Print a box label automatically on the default printer.
-                    BoxLabelPrinter.Print(
-                        customer:     p.Job.Customer,
-                        model:        p.Job.Model,
-                        jobNo:        p.Job.JobNo,
-                        partNumber:   p.Job.PartNumber,
-                        productName:  p.Job.ProductName,
-                        qtyPerBox:    p.Job.QtyPerBox,
-                        boxSerial:    result.BoxSerial,
-                        lineName:     p.Line.Name,
-                        prodDate:     DateTime.Today);
-
                     // Add the completed box to the Terima Box / Pallet grid.
                     _terimaBoxRows.Insert(0, new ScannedBoxRow
                     {
@@ -526,12 +545,15 @@ namespace LineProductionWPF
                         PartNumber = p.Job.PartNumber,
                         Model      = p.Job.Model,
                         PosisiPart = p.Job.PosisiPart,
-                        JamTutupBox = DateTime.Now.ToString("HH:mm"),
+                        JamTutupBox = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture),
+                        LabelStatus = autoPrintStatus ?? "",
                         // Status defaults to "Belum scan WHS"; JamTerima left blank.
                     });
                 }
 
-                txtStatus.Text = result.Message;
+                txtStatus.Text = labelMissing
+                    ? result.Message + "  —  Label box " + result.BoxSerial + " TIDAK tercetak (" + autoPrintStatus + "). Cetak lewat Cetak Ulang."
+                    : result.Message;
                 UpdateScanCounters();
             }
             catch (Exception ex)
@@ -883,6 +905,25 @@ namespace LineProductionWPF
             Application.Current.Shutdown();
         }
 
+        /// <summary>
+        /// Updates the Terima Box / Pallet grid from a database read. Rebuilt whenever any row differs
+        /// (new box, or a changed Status / Jam Terima once those come from the warehouse).
+        /// </summary>
+        private void SyncTerimaBoxRows(List<ScannedBoxRow> fresh)
+        {
+            foreach (var row in fresh)
+                row.LabelStatus = _labelStatus.TryGetValue(row.BoxSerial, out var st) ? st : "";
+
+            bool same = fresh.Count == _terimaBoxRows.Count;
+            for (int i = 0; same && i < fresh.Count; i++)
+                same = fresh[i].SameAs(_terimaBoxRows[i]);
+            if (same) return;
+
+            _terimaBoxRows.Clear();
+            foreach (var row in fresh)
+                _terimaBoxRows.Add(row);
+        }
+
         private void btnCetakUlang_Click(object sender, RoutedEventArgs e)
         {
             if (_line == null)
@@ -891,13 +932,22 @@ namespace LineProductionWPF
                 return;
             }
 
-            string? latestBox = _terimaBoxRows.Count > 0 ? _terimaBoxRows[0].BoxSerial : null;
+            // Prefer the newest box whose label did not print; otherwise the newest box.
+            string? latestBox = _terimaBoxRows.FirstOrDefault(r => r.IsLabelMissing)?.BoxSerial
+                                ?? (_terimaBoxRows.Count > 0 ? _terimaBoxRows[0].BoxSerial : null);
             _pickerOpen = true;
             try
             {
                 var dlg = new CetakUlangBoxWindow(_line.Id, latestBox) { Owner = this };
-                if (dlg.ShowDialog() == true)
-                    txtStatus.Text = "Label box berhasil dicetak ulang.";
+                if (dlg.ShowDialog() == true && dlg.PrintedSerial != null)
+                {
+                    string ok = BoxLabelPrinter.Describe(BoxLabelPrinter.PrintResult.Printed);
+                    _labelStatus[dlg.PrintedSerial] = ok;
+                    foreach (var row in _terimaBoxRows)
+                        if (string.Equals(row.BoxSerial, dlg.PrintedSerial, StringComparison.OrdinalIgnoreCase))
+                            row.LabelStatus = ok;
+                    txtStatus.Text = "Label box " + dlg.PrintedSerial + " berhasil dicetak.";
+                }
             }
             finally
             {

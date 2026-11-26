@@ -220,7 +220,7 @@ namespace LineProductionWPF
             string LineName,
             DateTime ProdDate);
 
-        public static BoxLabelData? LoadBoxForReprint(string boxSerial)
+        public static BoxLabelData? LoadBoxForReprint(string boxSerial, int lineProductionId)
         {
             boxSerial = (boxSerial ?? "").Trim();
             if (boxSerial.Length == 0) return null;
@@ -236,8 +236,9 @@ namespace LineProductionWPF
                 "FROM dbo.box b " +
                 "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
                 "LEFT JOIN dbo.line_production lp ON lp.id = b.line_production_id " +
-                "WHERE b.serial = @serial";
+                "WHERE b.serial = @serial AND b.line_production_id = @lp";
             cmd.Parameters.AddWithValue("@serial", boxSerial);
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
             using var r = cmd.ExecuteReader();
             if (!r.Read()) return null;
 
@@ -247,7 +248,7 @@ namespace LineProductionWPF
                 JobNo:       r.GetString(2).Trim(),
                 PartNumber:  r.GetString(3).Trim(),
                 ProductName: r.GetString(4).Trim(),
-                QtyPerBox:   r.GetInt32(5),
+                QtyPerBox:   Convert.ToInt32(r.GetValue(5)),   // works for int / smallint / decimal columns
                 BoxSerial:   r.GetString(6).Trim(),
                 LineName:    r.GetString(7).Trim(),
                 ProdDate:    r.GetDateTime(8));
@@ -798,8 +799,10 @@ namespace LineProductionWPF
     /// <summary>
     /// One completed box that is shown in the "Terima Box / Pallet" grid.
     /// </summary>
-    public class ScannedBoxRow
+    public class ScannedBoxRow : System.ComponentModel.INotifyPropertyChanged
     {
+        public event System.ComponentModel.PropertyChangedEventHandler? PropertyChanged;
+
         /// <summary>Box serial / name, e.g. B261119.13.9CE.001</summary>
         public string BoxSerial { get; set; } = "";
 
@@ -820,5 +823,30 @@ namespace LineProductionWPF
 
         /// <summary>Time the warehouse received / scanned the box. Left blank until filled in.</summary>
         public string JamTerima { get; set; } = "";
+
+        private string _labelStatus = "";
+        /// <summary>
+        /// Label print result in this session ("Tercetak", "Printer tidak siap", ...).
+        /// Empty = unknown (box closed before the app was opened).
+        /// </summary>
+        public string LabelStatus
+        {
+            get => _labelStatus;
+            set
+            {
+                if (_labelStatus == value) return;
+                _labelStatus = value;
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(LabelStatus)));
+                PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(IsLabelMissing)));
+            }
+        }
+
+        /// <summary>True when the auto-print was skipped or failed and the label still has to be printed.</summary>
+        public bool IsLabelMissing => _labelStatus.Length > 0 && _labelStatus != "Tercetak";
+
+        public bool SameAs(ScannedBoxRow o) =>
+            BoxSerial == o.BoxSerial && PartNumber == o.PartNumber && Model == o.Model &&
+            PosisiPart == o.PosisiPart && JamTutupBox == o.JamTutupBox &&
+            Status == o.Status && JamTerima == o.JamTerima && LabelStatus == o.LabelStatus;
     }
 }

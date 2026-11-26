@@ -21,13 +21,40 @@ namespace LineProductionWPF
         private const double LabelWidth  = 9.0 * CmToPx;   // ≈ 340 px
         private const double LabelHeight = 6.0 * CmToPx;   // ≈ 227 px
 
+        // Manual fine-tune (mm) applied after the driver offset correction.
+        // Positive Y moves the print DOWN, negative moves it UP. Leave 0 unless still off.
+        private const double NudgeXMm = 0.0;
+        private const double NudgeYMm = 0.0;
+
         private const string Manufacturer = "PT. SUNGWOO INDONESIA";
 
+        /// <summary>Outcome of a print attempt.</summary>
+        public enum PrintResult
+        {
+            Printed,
+            /// <summary>No default printer, or it is offline / paused / in error.</summary>
+            PrinterNotReady,
+            /// <summary>The driver's paper size is not 90 x 60 mm, so the label was not printed.</summary>
+            PaperMismatch,
+            /// <summary>Printing threw an error.</summary>
+            Failed
+        }
+
+        /// <summary>Short Indonesian text for a non-printed result, for the status bar / grid.</summary>
+        public static string Describe(PrintResult r) => r switch
+        {
+            PrintResult.Printed         => "Tercetak",
+            PrintResult.PrinterNotReady => "Printer tidak siap",
+            PrintResult.PaperMismatch   => "Ukuran kertas salah",
+            _                           => "Gagal cetak"
+        };
+
         /// <summary>
-        /// Prints a label for the box that was just completed.
-        /// Errors are silently swallowed so a print failure never breaks scanning.
+        /// Prints a box label. Never throws, so a print failure never breaks scanning.
+        /// With <paramref name="askOnPaperMismatch"/> false (auto-print) a wrong paper size is skipped
+        /// without any popup; with true (Cetak Ulang) the operator is asked whether to print anyway.
         /// </summary>
-        public static void Print(
+        public static PrintResult Print(
             string customer,
             string model,
             string jobNo,
@@ -36,12 +63,13 @@ namespace LineProductionWPF
             int qtyPerBox,
             string boxSerial,
             string lineName,
-            DateTime prodDate)
+            DateTime prodDate,
+            bool askOnPaperMismatch = false)
         {
             try
             {
                 var queue = GetDefaultPrintQueue();
-                if (queue == null) return;
+                if (queue == null || !IsReady(queue)) return PrintResult.PrinterNotReady;
 
                 var dialog = new PrintDialog { PrintQueue = queue };
 
@@ -52,13 +80,15 @@ namespace LineProductionWPF
 
                 if (sizeChanged)
                 {
+                    if (!askOnPaperMismatch) return PrintResult.PaperMismatch;
+
                     string msg = string.Format(CultureInfo.CurrentCulture,
                         "Driver printer memakai ukuran kertas {0:0.#} x {1:0.#} mm, bukan {2:0.#} x {3:0.#} mm.\n\n" +
                         "Atur ukuran kertas di Printer Preferences menjadi {2:0.#} x {3:0.#} mm supaya hasil tidak terpotong.\n\nTetap cetak?",
                         pageSize.Width * 25.4 / 96.0, pageSize.Height * 25.4 / 96.0,
                         expected.Width * 25.4 / 96.0, expected.Height * 25.4 / 96.0);
                     if (MessageBox.Show(msg, "Ukuran kertas berbeda", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-                        return;
+                        return PrintResult.PaperMismatch;
                 }
 
                 // Read the printer's actual printable area before building/scaling.
@@ -103,14 +133,51 @@ namespace LineProductionWPF
                     Stretch = Stretch.Fill
                 };
                 RenderOptions.SetBitmapScalingMode(printImage, BitmapScalingMode.NearestNeighbor);
+                // PrintVisual draws starting at the driver's imageable-area origin, not the
+                // physical page corner. Our image is already sized to the full label, so a
+                // non-zero driver top/left margin pushes it down/right and cuts off the bottom.
+                // Shift it back by that origin so the label lands exactly on the sticker.
+                double offsetX = 0, offsetY = 0;
+                try
+                {
+                    var area = queue.GetPrintCapabilities(dialog.PrintTicket).PageImageableArea;
+                    if (area != null)
+                    {
+                        offsetX = area.OriginWidth;
+                        offsetY = area.OriginHeight;
+                    }
+                }
+                catch { /* driver doesn't report capabilities; assume no offset */ }
+
                 printImage.Measure(new Size(targetW, targetH));
                 printImage.Arrange(new Rect(0, 0, targetW, targetH));
+                printImage.RenderTransform = new TranslateTransform(
+                    -offsetX + NudgeXMm * CmToPx / 10.0,
+                    -offsetY + NudgeYMm * CmToPx / 10.0);
+                printImage.UpdateLayout();
 
                 dialog.PrintVisual(printImage, "Box Label - " + (boxSerial.Length > 0 ? boxSerial : partNumber));
+                return PrintResult.Printed;
             }
             catch
             {
-                // Print failures must not interrupt production scanning.
+                // Print failures must not interrupt production scanning; the caller shows the result.
+                return PrintResult.Failed;
+            }
+        }
+
+        private static bool IsReady(PrintQueue queue)
+        {
+            try
+            {
+                queue.Refresh();
+                return !(queue.IsOffline || queue.IsPaused || queue.IsInError ||
+                         queue.IsNotAvailable || queue.IsPaperJammed || queue.IsOutOfPaper ||
+                         queue.IsDoorOpened || queue.NeedUserIntervention);
+            }
+            catch
+            {
+                return true;   // status unknown: try printing and let PrintVisual report a failure
             }
         }
 
