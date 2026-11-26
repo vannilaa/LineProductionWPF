@@ -124,6 +124,15 @@ namespace LineProductionWPF
             return total;
         }
 
+        // Berjalan only once the current job has scans or its start time has come; a job scheduled for later stays Menunggu.
+        private static string StatusOf(KanbanJob job, KanbanJob current, ScheduleJobTimeResult timing)
+        {
+            if (job.IsComplete) return "Selesai";
+            if (!ReferenceEquals(job, current)) return "Menunggu";
+            if (!timing.IsUsable || timing.HasStarted) return "Berjalan";
+            return timing.Start.HasValue ? "Menunggu (mulai " + timing.Start.Value.ToString("HH:mm") + ")" : "Menunggu";
+        }
+
         public KanbanNumbers Calculate(IList<KanbanJob> jobs, DateTime now)
         {
             var n = new KanbanNumbers();
@@ -145,7 +154,7 @@ namespace LineProductionWPF
                 if (!timing.IsUsable)
                 {
                     job.Count = 0;
-                    job.Status = job.IsComplete ? "Selesai" : ReferenceEquals(job, n.Current) ? "Berjalan" : "Menunggu";
+                    job.Status = StatusOf(job, n.Current, timing);
                     job.Mulai = null;
                     job.Selesai = null;
                     job.PlannedEnd = null;
@@ -162,7 +171,7 @@ namespace LineProductionWPF
                     DateTime countUntil = timing.IsComplete ? end : timing.IsCurrent ? now : start;
                     double elapsed = WorkCalendar.WorkingSeconds(start, countUntil) - PausedWorkingSeconds(start, countUntil, now);
                     job.Count = (int)Math.Min(Math.Max(0, elapsed) * job.Target / 3600.0, job.Jumlah);
-                    job.Status = job.IsComplete ? "Selesai" : ReferenceEquals(job, n.Current) ? "Berjalan" : "Menunggu";
+                    job.Status = StatusOf(job, n.Current, timing);
                     job.Mulai = timing.Start;
                     job.Selesai = timing.End;
                     job.PlannedEnd = timing.PlannedEnd;
