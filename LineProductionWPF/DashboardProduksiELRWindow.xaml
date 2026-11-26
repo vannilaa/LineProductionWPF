@@ -473,7 +473,15 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <DataGridTextColumn Header="Status"      Binding="{Binding Status}"     Width="1.1*"/>
+                                <DataGridTextColumn Header="Status"      Binding="{Binding Status}"     Width="1.1*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <!-- "Menunggu (mulai 10:00)" is longer than the column: wrap it onto a second line -->
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextWrapping" Value="Wrap"/>
+                                            <Setter Property="VerticalAlignment" Value="Center"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                             </DataGrid.Columns>
                         </DataGrid>
                     </TabItem>
