@@ -96,7 +96,22 @@ namespace LineProductionWPF
             {
                 serialMonitor.ApplySettings(AppSettings.Current, connectNow: AppSettings.Current.EspAutoConnect);
                 UpdateCheckerText();
+                AutoPickLabelPrinter();
             };
+        }
+
+        /// <summary>
+        /// No label printer chosen yet (first start on this PC): if exactly one printer has 90 × 60 mm paper, use and save it,
+        /// so the label printer never has to be the Windows default. With none or several, it stays as it is (Pengaturan).
+        /// </summary>
+        private void AutoPickLabelPrinter()
+        {
+            if (!string.IsNullOrEmpty(AppSettings.Current.PrinterName)) return;
+            var found = BoxLabelPrinter.FindLabelPrinters();
+            if (found.Count != 1) return;
+            AppSettings.Current.PrinterName = found[0];
+            AppSettings.Save();
+            txtStatus.Text = "Printer label box otomatis dipilih: " + found[0] + " (ubah di Pengaturan).";
         }
 
         // ---------- Pengaturan (gear): Checker, printer, ESP COM ----------

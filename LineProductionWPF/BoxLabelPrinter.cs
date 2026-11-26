@@ -670,6 +670,32 @@ namespace LineProductionWPF
             return list;
         }
 
+        /// <summary>
+        /// True when the printer's paper in its driver settings (Printer Preferences) is 90 × 60 mm, either way round (±3 mm).
+        /// Used to find the label printer by itself, so it does not have to be the Windows default printer.
+        /// </summary>
+        public static bool HasLabelPaper(string name)
+        {
+            var q = FindQueue(name);
+            if (q == null) return false;
+            try
+            {
+                PageMediaSize? size = (q.UserPrintTicket ?? q.DefaultPrintTicket)?.PageMediaSize;
+                if (size?.Width == null || size.Height == null) return false;
+                double wMm = size.Width.Value * 25.4 / 96.0, hMm = size.Height.Value * 25.4 / 96.0;
+                bool Near(double a, double b) => Math.Abs(a - b) <= 3.0;
+                return (Near(wMm, 90) && Near(hMm, 60)) || (Near(wMm, 60) && Near(hMm, 90));
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>Installed printers whose paper is 90 × 60 mm (see <see cref="HasLabelPaper"/>).</summary>
+        public static System.Collections.Generic.List<string> FindLabelPrinters() =>
+            ListPrinters().FindAll(HasLabelPaper);
+
         /// <summary>Name of the Windows default printer, or "" when there is none.</summary>
         public static string DefaultPrinterName()
         {

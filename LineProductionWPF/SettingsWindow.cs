@@ -58,13 +58,29 @@ namespace LineProductionWPF
             root.Children.Add(Header("Printer label box"));
             var printerRow = new DockPanel();
             var btnPrinterRefresh = new Button { Content = "Segarkan", Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
+            var btnPrinterFind = new Button { Content = "Cari printer 60×90", Padding = new Thickness(10, 2, 10, 2), Margin = new Thickness(6, 0, 0, 0) };
             DockPanel.SetDock(btnPrinterRefresh, Dock.Right);
+            DockPanel.SetDock(btnPrinterFind, Dock.Right);
             printerRow.Children.Add(btnPrinterRefresh);
+            printerRow.Children.Add(btnPrinterFind);
             printerRow.Children.Add(_cbPrinter);
             root.Children.Add(printerRow);
             root.Children.Add(_txtPrinterStatus);
-            root.Children.Add(Hint("Pilihan ini disimpan sebagai printer default untuk label box di PC ini (default Windows tidak diubah)."));
+            root.Children.Add(Hint("Pilihan ini disimpan sebagai printer label box di PC ini, jadi printer label tidak perlu dijadikan " +
+                                   "default Windows. \"Cari printer 60×90\" memilih printer yang kertasnya 90 × 60 mm."));
             btnPrinterRefresh.Click += (s, e) => LoadPrinters(SelectedPrinter());
+            btnPrinterFind.Click += (s, e) =>
+            {
+                var found = BoxLabelPrinter.FindLabelPrinters();
+                if (found.Count == 0)
+                {
+                    _txtPrinterStatus.Text = "Tidak ada printer dengan kertas 90 × 60 mm. Atur ukuran kertas di Printer Preferences, lalu coba lagi.";
+                    _txtPrinterStatus.Foreground = Brushes.Firebrick;
+                    return;
+                }
+                LoadPrinters(found[0]);
+                if (found.Count > 1) _txtPrinterStatus.Text += "  (ada " + found.Count + " printer 90 × 60 mm, pilih yang benar)";
+            };
             _cbPrinter.SelectionChanged += (s, e) => ShowPrinterStatus();
             LoadPrinters(st.PrinterName);
 
@@ -128,8 +144,12 @@ namespace LineProductionWPF
             string which = name.Length == 0
                 ? (BoxLabelPrinter.DefaultPrinterName() is { Length: > 0 } d ? "Default Windows = " + d + ". " : "Tidak ada printer default Windows. ")
                 : "";
-            _txtPrinterStatus.Text = which + "Status: " + status;
-            _txtPrinterStatus.Foreground = status == "Siap" ? Brushes.ForestGreen : Brushes.Firebrick;
+            string effective = name.Length > 0 ? name : BoxLabelPrinter.DefaultPrinterName();
+            string paper = effective.Length == 0 ? ""
+                         : BoxLabelPrinter.HasLabelPaper(effective) ? "  ·  Kertas 90 × 60 mm"
+                         : "  ·  Kertas BUKAN 90 × 60 mm";
+            _txtPrinterStatus.Text = which + "Status: " + status + paper;
+            _txtPrinterStatus.Foreground = status == "Siap" && paper.EndsWith("Kertas 90 × 60 mm") ? Brushes.ForestGreen : Brushes.Firebrick;
         }
 
         // ---------------- ESP port ----------------

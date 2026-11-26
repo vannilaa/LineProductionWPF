@@ -10,7 +10,11 @@ using System.Windows.Threading;
 
 namespace LineProductionWPF
 {
-    /// <summary>Serial monitor (like the Arduino IDE): choose COM port and baud, connect, read incoming text, send text.</summary>
+    /// <summary>
+    /// Serial monitor (like the Arduino IDE) for the ESP: shows what arrives, sends text, Connect / Disconnect.
+    /// Port and baud are NOT chosen here: they come only from Pengaturan (AppSettings.EspPort / EspBaud),
+    /// so there is one place that decides which COM port the ESP is on.
+    /// </summary>
     public partial class SerialMonitorView : UserControl
     {
         public static readonly int[] Bauds = { 300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 74880, 115200, 230400, 250000, 500000, 1000000 };
@@ -27,31 +31,11 @@ namespace LineProductionWPF
         public SerialMonitorView()
         {
             InitializeComponent();
-            cbBaud.ItemsSource = Bauds;
-            cbBaud.SelectedItem = 9600;
             cbEnding.ItemsSource = Endings;
             cbEnding.SelectedIndex = 0;
             _watch.Tick += (s, e) => CheckPortStillThere();
-            RefreshPorts();
             UpdateUi();
         }
-
-        // ---------------- port list ----------------
-        private void RefreshPorts()
-        {
-            string? keep = cbPort.SelectedItem as string;
-            string[] names = SerialPort.GetPortNames().OrderBy(n => n.Length).ThenBy(n => n, StringComparer.OrdinalIgnoreCase).ToArray();
-            cbPort.ItemsSource = names;
-            if (keep != null && names.Contains(keep)) cbPort.SelectedItem = keep;
-            else if (names.Length > 0) cbPort.SelectedIndex = 0;
-        }
-
-        private void cbPort_DropDownOpened(object? sender, EventArgs e)
-        {
-            if (_port == null) RefreshPorts();   // pick up a newly plugged adapter
-        }
-
-        private void btnRefresh_Click(object sender, RoutedEventArgs e) => RefreshPorts();
 
         // ---------------- settings (Pengaturan window) ----------------
         public bool IsConnected => _port != null;
@@ -62,41 +46,34 @@ namespace LineProductionWPF
         /// </summary>
         public void ApplySettings(AppSettings st, bool connectNow)
         {
-            bool wasConnected = _port != null;
-            bool changed = wasConnected && (!string.Equals(_port!.PortName, st.EspPort, StringComparison.OrdinalIgnoreCase) || _port.BaudRate != st.EspBaud);
+            bool changed = _port != null &&
+                           (!string.Equals(_port.PortName, st.EspPort, StringComparison.OrdinalIgnoreCase) || _port.BaudRate != st.EspBaud);
             if (changed) Disconnect(null);
-
-            if (_port == null)
-            {
-                RefreshPorts();
-                if (!string.IsNullOrEmpty(st.EspPort) && cbPort.ItemsSource is string[] names && names.Contains(st.EspPort, StringComparer.OrdinalIgnoreCase))
-                    cbPort.SelectedItem = names.First(n => string.Equals(n, st.EspPort, StringComparison.OrdinalIgnoreCase));
-                if (Bauds.Contains(st.EspBaud)) cbBaud.SelectedItem = st.EspBaud;
-            }
             if (st.EspLineEnding >= 0 && st.EspLineEnding < Endings.Length) cbEnding.SelectedIndex = st.EspLineEnding;
-
-            if (_port == null && (connectNow || changed) && !string.IsNullOrEmpty(st.EspPort))
-            {
-                if (cbPort.SelectedItem is string sel && string.Equals(sel, st.EspPort, StringComparison.OrdinalIgnoreCase))
-                    Connect(save: false);
-                else
-                    txtState.Text = "ESP: " + st.EspPort + " tidak ditemukan (kabel belum dicolok?). Hubungkan lewat tab ini atau Pengaturan.";
-            }
+            UpdateUi();
+            if (_port == null && (connectNow || changed) && !string.IsNullOrEmpty(st.EspPort)) Connect();
         }
 
         // ---------------- connect / disconnect ----------------
         private void btnConnect_Click(object sender, RoutedEventArgs e)
         {
             if (_port != null) { Disconnect("Terputus."); return; }
-            Connect(save: true);
+            Connect();
         }
 
-        /// <param name="save">Remember this port + baud as the ESP port in the settings (manual connect in this tab).</param>
-        private void Connect(bool save)
+        /// <summary>Opens the port saved in Pengaturan.</summary>
+        private void Connect()
         {
-            if (cbPort.SelectedItem is not string name || cbBaud.SelectedItem is not int baud)
+            string name = AppSettings.Current.EspPort;
+            int baud = AppSettings.Current.EspBaud > 0 ? AppSettings.Current.EspBaud : 9600;
+            if (string.IsNullOrEmpty(name))
             {
-                txtState.Text = "Pilih port dan baud dulu.";
+                txtState.Text = "Port ESP belum diatur. Pilih port di Pengaturan.";
+                return;
+            }
+            if (!SerialPort.GetPortNames().Contains(name, StringComparer.OrdinalIgnoreCase))
+            {
+                txtState.Text = "ESP: " + name + " tidak ditemukan (kabel belum dicolok?). Colok lalu tekan Hubungkan, atau ganti port di Pengaturan.";
                 return;
             }
 
@@ -110,12 +87,6 @@ namespace LineProductionWPF
                 _prevCr = false;
                 _watch.Start();
                 UpdateUi();
-                if (save)
-                {
-                    AppSettings.Current.EspPort = name;
-                    AppSettings.Current.EspBaud = baud;
-                    AppSettings.Save();
-                }
             }
             catch (UnauthorizedAccessException)
             {
@@ -152,7 +123,6 @@ namespace LineProductionWPF
             {
                 string n = _port.PortName;
                 Disconnect(n + " hilang (kabel dicabut?). Terputus.");
-                RefreshPorts();
             }
         }
 
@@ -160,9 +130,9 @@ namespace LineProductionWPF
         {
             bool on = _port != null;
             btnConnect.Content = on ? "Putuskan" : "Hubungkan";
-            cbPort.IsEnabled = !on;
-            cbBaud.IsEnabled = !on;
-            btnRefresh.IsEnabled = !on;
+            string port = AppSettings.Current.EspPort;
+            txtPortInfo.Text = "ESP: " + (port.Length > 0 ? port + " · " + AppSettings.Current.EspBaud + " baud" : "port belum diatur") +
+                               "  (ubah di Pengaturan)";
             txtSend.IsEnabled = on;
             cbEnding.IsEnabled = on;
             btnSend.IsEnabled = on;
