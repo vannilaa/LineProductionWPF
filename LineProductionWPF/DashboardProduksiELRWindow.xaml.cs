@@ -30,6 +30,7 @@ namespace LineProductionWPF
         private DateTime _date = DateTime.Today;
         private List<KanbanJob> _jobs = new List<KanbanJob>();
         private KanbanJob _current;                                   // the job on the boards
+        private bool _jobsRead;                                       // the jobs of _line/_date were read at least once (empty = really no schedule)
         private DateTime _lastRead = DateTime.MinValue;
         private bool _reading;
         private int? _lastScheduleRevisionVersion;
@@ -41,7 +42,8 @@ namespace LineProductionWPF
 
         // ---- Terima Box / Pallet tab ----
         private readonly ObservableCollection<ScannedBoxRow> _terimaBoxRows = new ObservableCollection<ScannedBoxRow>();
-        // Label print result per box serial for this session (kept across grid reloads; not stored in the database).
+        // Why a label did not print in this session (kept across grid reloads). Whether a box was printed at all comes
+        // from the database (box.print_count); this only adds the reason, e.g. "Printer tidak siap".
         private readonly Dictionary<string, string> _labelStatus = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         private readonly HashSet<string> _allScanned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);   // quick duplicate check (the database is the real one)
         private readonly List<string> _scanHistory = new List<string>();
@@ -89,16 +91,100 @@ namespace LineProductionWPF
 
             UpdateClock();
             Render();
+
+            Loaded += (s, e) =>
+            {
+                serialMonitor.ApplySettings(AppSettings.Current, connectNow: AppSettings.Current.EspAutoConnect);
+                UpdateCheckerText();
+                AutoPickLabelPrinter();
+            };
+        }
+
+        /// <summary>
+        /// No label printer chosen yet (first start on this PC): if exactly one printer has 90 × 60 mm paper, use and save it,
+        /// so the label printer never has to be the Windows default. With none or several, it stays as it is (Pengaturan).
+        /// </summary>
+        private void AutoPickLabelPrinter()
+        {
+            if (!string.IsNullOrEmpty(AppSettings.Current.PrinterName)) return;
+            var found = BoxLabelPrinter.FindLabelPrinters();
+            if (found.Count != 1) return;
+            AppSettings.Current.PrinterName = found[0];
+            AppSettings.Save();
+            txtStatus.Text = "Printer label box otomatis dipilih: " + found[0] + " (ubah di Pengaturan).";
+        }
+
+        // ---------- Pengaturan (gear): Checker, printer, ESP COM ----------
+        private void btnSettings_Click(object sender, RoutedEventArgs e) => OpenSettings();
+
+        private void OpenSettings()
+        {
+            _pickerOpen = true;
+            try
+            {
+                var dlg = new SettingsWindow(serialMonitor, _line) { Owner = this };
+                dlg.ShowDialog();
+            }
+            finally
+            {
+                _pickerOpen = false;
+                UpdateCheckerText();
+                txtScan.Focus();
+            }
+        }
+
+        /// <summary>Asks the Checker of the current line (app opened, line changed, new day). "Nanti" leaves it empty (red).</summary>
+        private void AskChecker()
+        {
+            if (_line == null) return;
+            var line = _line;
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (!ReferenceEquals(line, _line) || !IsLoaded) return;   // the line changed again meanwhile
+                _pickerOpen = true;
+                try { new CheckerWindow(line) { Owner = this }.ShowDialog(); }
+                finally
+                {
+                    _pickerOpen = false;
+                    UpdateCheckerText();
+                    txtScan.Focus();
+                }
+            }), DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>"Checker: name" next to the gear; red when no Checker was entered today for this line.</summary>
+        private void UpdateCheckerText()
+        {
+            string checker = _line != null ? AppSettings.Current.CheckerFor(_line.Id) : "";
+            txtChecker.Text = "Checker: " + (checker.Length > 0 ? checker : "BELUM DIISI");
+            txtChecker.Foreground = checker.Length > 0
+                ? new SolidColorBrush(Color.FromRgb(0x37, 0x41, 0x51))
+                : new SolidColorBrush(Color.FromRgb(0xB9, 0x1C, 0x1C));
         }
 
         // ---------- data in ----------
-        private async Task PickFirstLine()
+        /// <summary>
+        /// App start: opens the line this PC used last (AppSettings.LastLineId), even when it has no job today
+        /// (then it shows TIDAK ADA JADWAL and keeps checking, so the jobs appear as soon as DailyScheduler saves them).
+        /// It never jumps to another line by itself, so scans can't go to the wrong line.
+        /// First start (no saved line, or the line was deleted): the line picker opens.
+        /// </summary>
+        private async Task OpenStartLine()
         {
             try
             {
+                int savedId = AppSettings.Current.LastLineId;
+                if (savedId > 0)
+                {
+                    var all = await Task.Run(() => SchedulerDb.LoadLines());
+                    KanbanLine? saved = all.FirstOrDefault(l => l.Id == savedId);
+                    if (saved != null) { SelectLine(saved); return; }
+                }
+
                 var lines = await Task.Run(() => SchedulerDb.LoadScheduledLines(_date));
-                if (lines.Count > 0) SelectLine(lines[0]);
-                else ShowNoSchedule();
+                if (lines.Count == 0) { ShowNoSchedule(); return; }
+                txtStatus.Text = "Pilih line untuk PC ini.";
+                ShowLinePicker(lines);
             }
             catch (Exception ex)
             {
@@ -117,7 +203,13 @@ namespace LineProductionWPF
         {
             _line = line;
             _date = DateTime.Today;
+            _jobsRead = false;
             NomorLine.Text = line.Name;
+            if (AppSettings.Current.LastLineId != line.Id)
+            {
+                AppSettings.Current.LastLineId = line.Id;   // the same line opens next time
+                AppSettings.Save();
+            }
             if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();   // web tab is open: show the new line
             _jobs = new List<KanbanJob>();
             _terimaBoxRows.Clear();
@@ -129,6 +221,8 @@ namespace LineProductionWPF
             UpdatePauseButton();
             ResetScanPanel();
             _lastRead = DateTime.MinValue;   // read right away
+            UpdateCheckerText();
+            AskChecker();
             Tick();
         }
 
@@ -140,6 +234,9 @@ namespace LineProductionWPF
             if (_line != null && _date != DateTime.Today)   // midnight: a new day, a new schedule
             {
                 _date = DateTime.Today;
+                _jobsRead = false;
+                UpdateCheckerText();   // yesterday's Checker is no longer valid
+                AskChecker();
                 _jobs = new List<KanbanJob>();
                 _terimaBoxRows.Clear();
                 _labelStatus.Clear();
@@ -189,6 +286,7 @@ namespace LineProductionWPF
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
+                        _jobsRead = true;
                         if (completedBoxes != null)
                             SyncTerimaBoxRows(completedBoxes);
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
@@ -330,7 +428,8 @@ namespace LineProductionWPF
             _syncBoxProgress = false;
 
             UpdateCustomer(_current?.Customer);
-            PartNomor.Text = _current?.PartNumber ?? "-";
+            PartNomor.Text = _current?.PartNumber
+                             ?? (_line != null && _jobsRead && _jobs.Count == 0 ? "TIDAK ADA JADWAL HARI INI" : "-");
             Posisi.Text = _current == null || string.IsNullOrWhiteSpace(_current.Posisi) ? "-" : _current.Posisi;
             PartHeader.Text = _current == null || string.IsNullOrWhiteSpace(_current.Part) ? "-" : _current.Part;
             Model.Text = _current == null || string.IsNullOrWhiteSpace(_current.Model) ? "-" : _current.Model;
@@ -491,22 +590,35 @@ namespace LineProductionWPF
                 // a skipped/failed print is shown in the Label column so it can be printed from Cetak Ulang.
                 string? autoPrintStatus = null;
                 bool labelMissing = false;
+                string? printLogError = null;
                 if (result.ScansInOpenBox == 0 && result.CompletedBoxes > 0 && !string.IsNullOrEmpty(result.BoxSerial))
                 {
+                    string checker = AppSettings.Current.CheckerFor(p.Line.Id);
                     var printResult = BoxLabelPrinter.Print(
                         customer:     p.Job.Customer,
                         model:        p.Job.Model,
                         jobNo:        p.Job.JobNo,
-                        partNumber:   p.Job.PartNumber,
+                        // No part number on the product: the barcode, same as Cetak Ulang (LoadBoxForReprint), so both labels match.
+                        partNumber:   string.IsNullOrWhiteSpace(p.Job.PartNumber) || p.Job.PartNumber == "-" ? p.Job.Barcode : p.Job.PartNumber,
                         productName:  p.Job.ProductName,
                         qtyPerBox:    p.Job.QtyPerBox,
                         boxSerial:    result.BoxSerial,
                         lineName:     p.Line.Name,
-                        prodDate:     _date);   // schedule date = box.tanggal, same date a reprint uses
+                        prodDate:     _date,    // schedule date = box.tanggal, same date a reprint uses
+                        checkerName:  checker,
+                        qrModelPartNumber: p.Job.QrModelPartNumber);
                     autoPrintStatus = BoxLabelPrinter.Describe(printResult);
                     labelMissing = printResult != BoxLabelPrinter.PrintResult.Printed;
                     _labelStatus[result.BoxSerial] = autoPrintStatus;
                     if (labelMissing) System.Media.SystemSounds.Exclamation.Play();
+                    else
+                    {
+                        // Printed: save it (first print -> box_print_job with reprint_reason NULL). A skipped print saves nothing.
+                        string serial = result.BoxSerial, printer = BoxLabelPrinter.LastPrinterName ?? "";
+                        int lineId = p.Line.Id;
+                        try { await Task.Run(() => SchedulerDb.RecordBoxPrint(serial, lineId, checker, printer, null, null)); }
+                        catch (Exception ex) { printLogError = ex.Message; }
+                    }
                 }
 
                 // The job may have changed during the database call: the scan is saved, but this panel is another job's.
@@ -555,7 +667,9 @@ namespace LineProductionWPF
 
                 txtStatus.Text = labelMissing
                     ? result.Message + "  —  Label box " + result.BoxSerial + " TIDAK tercetak (" + autoPrintStatus + "). Cetak lewat Cetak Ulang."
-                    : result.Message;
+                    : printLogError != null
+                        ? result.Message + "  —  Label tercetak, tapi riwayat cetak gagal disimpan: " + printLogError
+                        : result.Message;
                 UpdateScanCounters();
             }
             catch (Exception ex)
@@ -705,7 +819,7 @@ namespace LineProductionWPF
         {
             ApplyFit(new Size(fitHost.ActualWidth, fitHost.ActualHeight));
             txtScan.Focus();
-            await PickFirstLine();
+            await OpenStartLine();
         }
 
         private void Window_Activated(object sender, EventArgs e)
@@ -913,8 +1027,28 @@ namespace LineProductionWPF
         /// </summary>
         private void SyncTerimaBoxRows(List<ScannedBoxRow> fresh)
         {
+            // Printed according to the database (survives a restart, also when printed on another PC) -> "Tercetak".
+            // Otherwise this session's result (also covers a print whose database save is still running), else "Belum tercetak".
+            string printed = BoxLabelPrinter.Describe(BoxLabelPrinter.PrintResult.Printed);
             foreach (var row in fresh)
-                row.LabelStatus = _labelStatus.TryGetValue(row.BoxSerial, out var st) ? st : "";
+            {
+                if (row.PrintedInDb)
+                {
+                    if (row.ReprintCount > 0)
+                    {
+                        string reason = string.IsNullOrWhiteSpace(row.ReprintReason) ? "" : ": " + row.ReprintReason;
+                        row.LabelStatus = $"Cetak ulang #{row.ReprintCount}{reason}";
+                    }
+                    else
+                    {
+                        row.LabelStatus = printed;
+                    }
+                }
+                else
+                {
+                    row.LabelStatus = _labelStatus.TryGetValue(row.BoxSerial, out var st) ? st : "Belum tercetak";
+                }
+            }
 
             bool same = fresh.Count == _terimaBoxRows.Count;
             for (int i = 0; same && i < fresh.Count; i++)
@@ -948,7 +1082,10 @@ namespace LineProductionWPF
                     foreach (var row in _terimaBoxRows)
                         if (string.Equals(row.BoxSerial, dlg.PrintedSerial, StringComparison.OrdinalIgnoreCase))
                             row.LabelStatus = ok;
-                    txtStatus.Text = "Label box " + dlg.PrintedSerial + " berhasil dicetak.";
+                    txtStatus.Text = dlg.LogError == null
+                        ? "Label box " + dlg.PrintedSerial + " berhasil dicetak."
+                        : "Label box " + dlg.PrintedSerial + " tercetak, tapi riwayat cetak gagal disimpan: " + dlg.LogError;
+                    _lastRead = DateTime.MinValue;   // re-read the grid (print_count changed)
                 }
             }
             finally
@@ -984,10 +1121,18 @@ namespace LineProductionWPF
 
             if (lines.Count == 0)
             {
-                ShowNoSchedule();
+                // Keep the line that is open (it may get a schedule later); only show that there is nothing to switch to.
+                if (_line == null) ShowNoSchedule();
+                else txtStatus.Text = "Tidak ada line yang punya jadwal hari ini.";
                 return;
             }
 
+            ShowLinePicker(lines);
+        }
+
+        /// <summary>Menu under the line name with the lines that have a schedule today.</summary>
+        private void ShowLinePicker(List<KanbanLine> lines)
+        {
             var menu = new ContextMenu
             {
                 PlacementTarget = bdNomorLine,

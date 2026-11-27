@@ -36,6 +36,7 @@ namespace LineProductionWPF
         public int OpenBoxScans { get; set; }    // scans in the box that is still open
         public string Customer { get; set; } = "";   // product.customer, e.g. "PT. ASTRA DAIHATSU MOTOR"
         public string ProductName { get; set; } = "";  // product.product_name, e.g. "Belt Assy, RR No.2 Seat, Outer LH"
+        public bool QrModelPartNumber { get; set; }    // product.qr_model_part_number
 
         public bool IsComplete => Jumlah > 0 && Discan >= Jumlah;
 
@@ -242,7 +243,8 @@ namespace LineProductionWPF
             int QtyPerBox,
             string BoxSerial,
             string LineName,
-            DateTime ProdDate);
+            DateTime ProdDate,
+            bool QrModelPartNumber);
 
         public static BoxLabelData? LoadBoxForReprint(string boxSerial, int lineProductionId)
         {
@@ -256,7 +258,8 @@ namespace LineProductionWPF
                 "SELECT TOP (1) " +
                 "  ISNULL(p.customer, N''), ISNULL(p.model, N''), ISNULL(p.job_no, N''), " +
                 "  COALESCE(p.part_number_code, p.part_number, b.barcode), ISNULL(p.product_name, N''), " +
-                "  ISNULL(b.qty_per_box, ISNULL(p.qty_per_box, 0)), b.serial, ISNULL(lp.name, N''), b.tanggal " +
+                "  ISNULL(b.qty_per_box, ISNULL(p.qty_per_box, 0)), b.serial, ISNULL(lp.name, N''), b.tanggal, " +
+                "  ISNULL(p.qr_model_part_number, 0) " +
                 "FROM dbo.box b " +
                 "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
                 "LEFT JOIN dbo.line_production lp ON lp.id = b.line_production_id " +
@@ -275,7 +278,8 @@ namespace LineProductionWPF
                 QtyPerBox:   Convert.ToInt32(r.GetValue(5)),   // works for int / smallint / decimal columns
                 BoxSerial:   r.GetString(6).Trim(),
                 LineName:    r.GetString(7).Trim(),
-                ProdDate:    r.GetDateTime(8));
+                ProdDate:    r.GetDateTime(8),
+                QrModelPartNumber: Convert.ToBoolean(r.GetValue(9)));
         }
 
         public static List<ScannedBoxRow> LoadCompletedBoxes(DateTime tanggal, int lineProductionId)
@@ -290,9 +294,15 @@ namespace LineProductionWPF
                 "       ISNULL(p.model, N''), " +
                 "       ISNULL(p.position, N''), " +
                 "       ISNULL(p.part, N''), " +
-                "       b.closed_at " +
+                "       b.closed_at, " +
+                "       b.print_count, " +
+                "       ISNULL(bp.reprint_count, 0), " +
+                "       ISNULL(bp.reprint_reason, N''), " +
+                "       ISNULL(b.checker_name, N'') " +      // Checker of the label on the box now (= last print)
                 "FROM dbo.box b " +
                 "LEFT JOIN dbo.product p ON p.barcode = b.barcode " +
+                "OUTER APPLY (SELECT TOP (1) reprint_count, reprint_reason " +
+                "             FROM dbo.box_print_job WHERE box_id = b.id ORDER BY id DESC) bp " +
                 "WHERE b.tanggal = @tanggal AND b.line_production_id = @lp AND b.closed_at IS NOT NULL " +
                 "ORDER BY b.closed_at DESC, b.id DESC";
             cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
@@ -306,6 +316,7 @@ namespace LineProductionWPF
                 string part = r.GetString(4).Trim();
                 string posisiPart = string.Join(" - ", new[] { posisi, part }.Where(x => !string.IsNullOrWhiteSpace(x) && x != "-"));
                 DateTime closedAt = r.GetDateTime(5);
+                int printCount = Convert.ToInt32(r.GetValue(6));
 
                 list.Add(new ScannedBoxRow
                 {
@@ -313,11 +324,93 @@ namespace LineProductionWPF
                     PartNumber  = r.GetString(1).Trim(),
                     Model       = r.GetString(2).Trim(),
                     PosisiPart  = posisiPart,
-                    JamTutupBox = closedAt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+                    JamTutupBox = closedAt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
+                    PrintedInDb = printCount > 0,
+                    ReprintCount = Convert.ToInt32(r.GetValue(7)),
+                    ReprintReason = r.GetString(8).Trim(),
+                    CheckerName = r.GetString(9).Trim()
                 });
             }
             return list;
         }
+
+        /// <summary>
+        /// Saves one box label print (sql/010_box_print_job.sql in DailyScheduler): adds a box_print_job row and
+        /// updates the counters on dbo.box. Like print_job: the first print of a box has is_reprint = 0 and
+        /// reason/note NULL (even when it was printed from Cetak Ulang because the auto-print was skipped);
+        /// every later print is a reprint with reprint_count 1, 2, ... and needs a reason.
+        /// Call only AFTER the label really printed. Returns false when the box is not found.
+        /// </summary>
+        public static bool RecordBoxPrint(string boxSerial, int lineProductionId, string checkerName, string? printer,
+                                          string? reason, string? note)
+        {
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var tx = con.BeginTransaction();
+
+            int boxId, printCount;
+            using (var cmd = Command(con, tx,
+                "SELECT id, print_count FROM dbo.box WITH (UPDLOCK, HOLDLOCK) WHERE serial = @serial AND line_production_id = @lp"))
+            {
+                cmd.Parameters.AddWithValue("@serial", boxSerial);
+                cmd.Parameters.AddWithValue("@lp", lineProductionId);
+                using var r = cmd.ExecuteReader();
+                if (!r.Read()) return false;
+                boxId = r.GetInt32(0);
+                printCount = r.GetInt32(1);
+            }
+
+            bool isReprint = printCount > 0;
+            int jobId;
+            using (var cmd = Command(con, tx,
+                "INSERT INTO dbo.box_print_job (box_id, printer, is_reprint, reprint_count, reprint_reason, reprint_note, " +
+                "                               checker_name, windows_user, machine_name) " +
+                "OUTPUT INSERTED.id " +
+                "VALUES (@box, @printer, @isReprint, @count, @reason, @note, @checker, @user, @machine)"))
+            {
+                cmd.Parameters.AddWithValue("@box", boxId);
+                cmd.Parameters.AddWithValue("@printer", (object?)Trunc(printer, 256) ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@isReprint", isReprint);
+                cmd.Parameters.AddWithValue("@count", printCount);   // 0 = first print, 1 = first reprint, ...
+                cmd.Parameters.AddWithValue("@reason", isReprint ? (object?)Trunc(reason ?? "-", 100) ?? DBNull.Value : DBNull.Value);
+                cmd.Parameters.AddWithValue("@note", isReprint ? (object?)Trunc(note, 500) ?? DBNull.Value : DBNull.Value);
+                cmd.Parameters.AddWithValue("@checker", Trunc(checkerName ?? "", 100) ?? "");
+                cmd.Parameters.AddWithValue("@user", Trunc(Environment.UserName, 100) ?? "");
+                cmd.Parameters.AddWithValue("@machine", Trunc(Environment.MachineName, 100) ?? "");
+                jobId = Convert.ToInt32(cmd.ExecuteScalar());
+            }
+
+            using (var cmd = Command(con, tx,
+                "UPDATE dbo.box SET print_count = print_count + 1, checker_name = @checker, " +
+                "  first_printed_at = ISNULL(first_printed_at, SYSDATETIME()), last_printed_at = SYSDATETIME(), " +
+                "  first_print_job_id = ISNULL(first_print_job_id, @job), last_print_job_id = @job " +
+                "WHERE id = @box"))
+            {
+                cmd.Parameters.AddWithValue("@checker", Trunc(checkerName ?? "", 100) ?? "");
+                cmd.Parameters.AddWithValue("@job", jobId);
+                cmd.Parameters.AddWithValue("@box", boxId);
+                cmd.ExecuteNonQuery();
+            }
+
+            tx.Commit();
+            return true;
+        }
+
+        /// <summary>dbo.box.print_count of a box of this line (0 = label never printed), or null when the box is not found.</summary>
+        public static int? GetBoxPrintCount(string boxSerial, int lineProductionId)
+        {
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText = "SELECT print_count FROM dbo.box WHERE serial = @serial AND line_production_id = @lp";
+            cmd.Parameters.AddWithValue("@serial", boxSerial);
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
+            object? v = cmd.ExecuteScalar();
+            return v == null || v is DBNull ? null : Convert.ToInt32(v);
+        }
+
+        private static string? Trunc(string? value, int max) =>
+            value == null ? null : (value.Length <= max ? value : value.Substring(0, max));
 
         public static List<KanbanLine> LoadLines()
         {
@@ -383,7 +476,7 @@ namespace LineProductionWPF
                 "       it.first_off, it.occurrence, it.same_rows, it.barcode_total, it.created_at, sc.last_at, " +
                 "       (SELECT TOP (1) b.serial FROM dbo.box b WHERE b.tanggal = it.tanggal AND b.line_production_id = it.line_production_id " +
                 "          AND b.barcode = it.barcode AND b.closed_at IS NULL ORDER BY b.box_no DESC), " +
-                "       it.version, p.model, it.added_at, it.start_time, p.product_name " +
+                "       it.version, p.model, it.added_at, it.start_time, p.product_name, ISNULL(p.qr_model_part_number, 0) " +
                 "FROM items it " +
                 "LEFT JOIN product p ON p.barcode = it.barcode " +
                 "OUTER APPLY (SELECT COUNT(c.id) AS cnt, MAX(c.scanned_at) AS last_at " +
@@ -430,7 +523,8 @@ namespace LineProductionWPF
                     Model = r.IsDBNull(22) ? "" : r.GetString(22).Trim(),
                     AddedAt = r.IsDBNull(23) ? null : r.GetDateTime(23),
                     StartTime = r.IsDBNull(24) ? null : r.GetTimeSpan(24),
-                    ProductName = r.IsDBNull(25) ? "" : r.GetString(25).Trim()
+                    ProductName = r.IsDBNull(25) ? "" : r.GetString(25).Trim(),
+                    QrModelPartNumber = Convert.ToBoolean(r.GetValue(26))
                 });
             }
             return list;
@@ -849,9 +943,15 @@ namespace LineProductionWPF
         public string JamTerima { get; set; } = "";
 
         private string _labelStatus = "";
+        /// <summary>True when dbo.box.print_count > 0 (the label was printed at least once, any PC, any session).</summary>
+        public bool PrintedInDb { get; set; }
+        public int ReprintCount { get; set; }
+        public string ReprintReason { get; set; } = "";
+        public string CheckerName { get; set; } = "";
+
         /// <summary>
-        /// Label print result in this session ("Tercetak", "Printer tidak siap", ...).
-        /// Empty = unknown (box closed before the app was opened).
+        /// Label column: "Tercetak", or why it did not print ("Printer tidak siap", ... from this session),
+        /// or "Belum tercetak" when the database says it never printed.
         /// </summary>
         public string LabelStatus
         {
@@ -866,11 +966,12 @@ namespace LineProductionWPF
         }
 
         /// <summary>True when the auto-print was skipped or failed and the label still has to be printed.</summary>
-        public bool IsLabelMissing => _labelStatus.Length > 0 && _labelStatus != "Tercetak";
+        public bool IsLabelMissing => !PrintedInDb && _labelStatus.Length > 0 && _labelStatus != "Tercetak";
 
         public bool SameAs(ScannedBoxRow o) =>
             BoxSerial == o.BoxSerial && PartNumber == o.PartNumber && Model == o.Model &&
             PosisiPart == o.PosisiPart && JamTutupBox == o.JamTutupBox &&
-            Status == o.Status && JamTerima == o.JamTerima && LabelStatus == o.LabelStatus;
+            Status == o.Status && JamTerima == o.JamTerima && LabelStatus == o.LabelStatus &&
+            CheckerName == o.CheckerName;
     }
 }
