@@ -480,12 +480,26 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="Target per Jam" Binding="{Binding Target}" Width="1.0*"/>
+                                <DataGridTextColumn Header="Target" Binding="{Binding Target}" Width="1.0*"/>
+                                <DataGridTextColumn Header="Problem" Width="1*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Countermeasure" Width="1.2*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                             </DataGrid.Columns>
                         </DataGrid>
                     </TabItem>
 
-                    <TabItem Header="Jadwal Produksi (per Job)">
+                    <TabItem Header="Jadwal Produksi (per PN)">
                         <DataGrid x:Name="dgvSchedule"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
