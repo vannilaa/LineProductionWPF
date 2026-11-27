@@ -32,6 +32,7 @@ namespace LineProductionWPF
         private KanbanJob _current;                                   // the job on the boards
         private Dictionary<(string Barcode, int Hour), int> _hourlyScans = new Dictionary<(string Barcode, int Hour), int>();
         private List<HourSlotRow> _hourRows = new List<HourSlotRow>();   // "Jadwal Produksi (per Jam)" tab
+        private Dictionary<string, KanbanJob> _scanProducts = new Dictionary<string, KanbanJob>(StringComparer.OrdinalIgnoreCase);   // names of scanned parts
         private bool _jobsRead;                                       // the jobs of _line/_date were read at least once (empty = really no schedule)
         private DateTime _lastRead = DateTime.MinValue;
         private bool _reading;
@@ -277,9 +278,15 @@ namespace LineProductionWPF
                         // keep the rows already on screen; the next refresh tries again
                     }
                     Dictionary<(string Barcode, int Hour), int>? hourlyScans = null;
+                    Dictionary<string, KanbanJob>? scanProducts = null;
                     try
                     {
-                        hourlyScans = await Task.Run(() => SchedulerDb.LoadHourlyScans(date, line.Id));
+                        hourlyScans = await Task.Run(() =>
+                        {
+                            var scans = SchedulerDb.LoadHourlyScans(date, line.Id, out var products);
+                            scanProducts = products;
+                            return scans;
+                        });
                     }
                     catch
                     {
@@ -300,6 +307,7 @@ namespace LineProductionWPF
                     {
                         _jobs = jobs;
                         if (hourlyScans != null) _hourlyScans = hourlyScans;
+                        if (scanProducts != null) _scanProducts = scanProducts;
                         _jobsRead = true;
                         if (completedBoxes != null)
                             SyncTerimaBoxRows(completedBoxes);
@@ -472,7 +480,7 @@ namespace LineProductionWPF
         // Per-hour table: same rows as last time (only the numbers changed) = keep the rows so the scroll position stays.
         private void RenderHourly(DateTime now)
         {
-            List<HourSlotRow> rows = HourlyPlanBuilder.Build(_jobs, _hourlyScans, _current, _date, now);
+            List<HourSlotRow> rows = HourlyPlanBuilder.Build(_jobs, _hourlyScans, _current, _date, now, _scanProducts);
             bool sameRows = rows.Count == _hourRows.Count && rows.Select(r => r.Key).SequenceEqual(_hourRows.Select(r => r.Key));
             if (sameRows && ReferenceEquals(dgvHourly.ItemsSource, _hourRows))
             {

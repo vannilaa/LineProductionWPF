@@ -539,23 +539,41 @@ namespace LineProductionWPF
         /// <summary>
         /// Scans of the day per barcode per clock hour (key: barcode, hour 0-23 of scanned_at): the "Actual" of the per-hour table.
         /// </summary>
-        public static Dictionary<(string Barcode, int Hour), int> LoadHourlyScans(DateTime tanggal, int lineProductionId)
+        /// <param name="products">Part number / model / posisi of every scanned barcode from dbo.product, for scans of a part
+        /// that is no longer in the schedule (row deleted), so the per-hour tab shows its name and not just the barcode.</param>
+        public static Dictionary<(string Barcode, int Hour), int> LoadHourlyScans(DateTime tanggal, int lineProductionId,
+                                                                                 out Dictionary<string, KanbanJob> products)
         {
             var result = new Dictionary<(string, int), int>();
             using var con = new SqlConnection(ConnectionString);
             con.Open();
             using var cmd = con.CreateCommand();
             cmd.CommandText =
-                "SELECT ps.barcode, DATEPART(HOUR, c.scanned_at), COUNT(*) " +
+                "SELECT ps.barcode, DATEPART(HOUR, c.scanned_at), COUNT(*), " +
+                "       MAX(COALESCE(p.part_number_code, p.part_number)), MAX(p.model), MAX(p.position), MAX(p.part) " +
                 "FROM print_sticker ps JOIN sticker_scan c ON c.print_sticker_id = ps.id " +
+                "LEFT JOIN product p ON p.barcode = ps.barcode " +
                 "WHERE ps.tanggal = @tanggal AND ps.line_production_id = @lp " +
                 "GROUP BY ps.barcode, DATEPART(HOUR, c.scanned_at)";
             cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
             cmd.Parameters.AddWithValue("@lp", lineProductionId);
             cmd.CommandTimeout = 30;
             using var r = cmd.ExecuteReader();
+            products = new Dictionary<string, KanbanJob>(StringComparer.OrdinalIgnoreCase);
             while (r.Read())
-                result[(r.GetString(0), r.GetInt32(1))] = r.GetInt32(2);
+            {
+                string barcode = r.GetString(0);
+                result[(barcode, r.GetInt32(1))] = r.GetInt32(2);
+                if (!products.ContainsKey(barcode))
+                    products[barcode] = new KanbanJob
+                    {
+                        Barcode = barcode,
+                        PartNumber = r.IsDBNull(3) ? barcode : r.GetString(3),
+                        Model = r.IsDBNull(4) ? "" : r.GetString(4).Trim(),
+                        Posisi = r.IsDBNull(5) ? "-" : r.GetString(5),
+                        Part = r.IsDBNull(6) ? "" : r.GetString(6)
+                    };
+            }
             return result;
         }
 

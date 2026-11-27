@@ -48,7 +48,8 @@ namespace LineProductionWPF
     public static class HourlyPlanBuilder
     {
         public static List<HourSlotRow> Build(IList<KanbanJob> jobs, IReadOnlyDictionary<(string Barcode, int Hour), int> scans,
-                                              KanbanJob? current, DateTime date, DateTime now)
+                                              KanbanJob? current, DateTime date, DateTime now,
+                                              IReadOnlyDictionary<string, KanbanJob>? scanProducts = null)
         {
             var planned = new List<HourSlotRow>();
             foreach (KanbanJob job in jobs)
@@ -90,7 +91,9 @@ namespace LineProductionWPF
             }
             foreach (var scan in scans.Where(s => s.Value > 0 && !taken.Contains((s.Key.Barcode, s.Key.Hour))))
             {
-                KanbanJob? job = jobs.FirstOrDefault(j => string.Equals(j.Barcode, scan.Key.Barcode, StringComparison.OrdinalIgnoreCase));
+                // part no longer in the schedule (row deleted): name from dbo.product
+                KanbanJob? job = jobs.FirstOrDefault(j => string.Equals(j.Barcode, scan.Key.Barcode, StringComparison.OrdinalIgnoreCase))
+                                 ?? (scanProducts != null && scanProducts.TryGetValue(scan.Key.Barcode, out var p) ? p : null);
                 HourSlotRow extra = job != null ? NewRow(job, scan.Key.Hour, 0) : new HourSlotRow { Hour = scan.Key.Hour, Barcode = scan.Key.Barcode, PartNumber = scan.Key.Barcode };
                 extra.Urutan = 0;
                 extra.Actual = scan.Value;
