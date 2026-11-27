@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text;
 using Microsoft.Data.SqlClient;
 
@@ -61,6 +61,7 @@ namespace LineProductionWPF
         // Times (set by KanbanTracker.Calculate). Finished jobs show what really happened, the others an estimate.
         public DateTime? Mulai { get; set; }               // start
         public DateTime? Selesai { get; set; }              // end (finished) or expected end
+        public DateTime? PlannedStart { get; set; }         // start according to the plan (every job on time, back to back)
         public DateTime? PlannedEnd { get; set; }           // end according to the plan (every job on time, back to back)
         public bool IsProjected { get; set; }               // true = estimate (job is running or waiting)
         public string MulaiNote { get; set; } = "";         // e.g. "(setelah istirahat 12-13)"
@@ -70,6 +71,11 @@ namespace LineProductionWPF
 
         public string MulaiText => Mulai?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "";
         public string SelesaiText => Selesai?.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) ?? "";
+        public string RencanaText => PlannedStart.HasValue && PlannedEnd.HasValue
+            ? PlannedStart.Value.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture) + " - " +
+              PlannedEnd.Value.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture)
+            : "";
+        public string RencanaNote => RencanaText.Length == 0 ? "" : "(rencana asli)";
         public string DiffKind => !DiffMinutes.HasValue ? "" : DiffMinutes.Value < 0 ? "Early" : DiffMinutes.Value > 0 ? "Late" : "OnTime";
         public string DiffText
         {
@@ -434,6 +440,29 @@ namespace LineProductionWPF
                 });
             }
             return list;
+        }
+
+        /// <summary>
+        /// Scans of the day per barcode per clock hour (key: barcode, hour 0-23 of scanned_at): the "Actual" of the per-hour table.
+        /// </summary>
+        public static Dictionary<(string Barcode, int Hour), int> LoadHourlyScans(DateTime tanggal, int lineProductionId)
+        {
+            var result = new Dictionary<(string, int), int>();
+            using var con = new SqlConnection(ConnectionString);
+            con.Open();
+            using var cmd = con.CreateCommand();
+            cmd.CommandText =
+                "SELECT ps.barcode, DATEPART(HOUR, c.scanned_at), COUNT(*) " +
+                "FROM print_sticker ps JOIN sticker_scan c ON c.print_sticker_id = ps.id " +
+                "WHERE ps.tanggal = @tanggal AND ps.line_production_id = @lp " +
+                "GROUP BY ps.barcode, DATEPART(HOUR, c.scanned_at)";
+            cmd.Parameters.Add("@tanggal", System.Data.SqlDbType.Date).Value = tanggal.Date;
+            cmd.Parameters.AddWithValue("@lp", lineProductionId);
+            cmd.CommandTimeout = 30;
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                result[(r.GetString(0), r.GetInt32(1))] = r.GetInt32(2);
+            return result;
         }
 
         /// <summary>The current schedule version and, when available, details of its latest edit.</summary>

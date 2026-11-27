@@ -128,6 +128,29 @@
             </Style.Triggers>
         </Style>
 
+        <!-- Per-hour table: a line above the first row of every hour; the current hour is tinted,
+             and inside it the running job gets the same strong highlight as the per-job table. -->
+        <Style x:Key="HourRow" TargetType="DataGridRow">
+            <Setter Property="Background" Value="#EFF6FC"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsFirstOfHour}" Value="True">
+                    <Setter Property="BorderThickness" Value="0,2,0,0"/>
+                    <Setter Property="BorderBrush" Value="#94A3B8"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsCurrentHour}" Value="True">
+                    <Setter Property="Background" Value="#FFF4CC"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsCurrentJob}" Value="True">
+                    <Setter Property="Background" Value="#FFD966"/>
+                    <Setter Property="BorderThickness" Value="4,0,0,0"/>
+                    <Setter Property="BorderBrush" Value="#F59E0B"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Cells: no border, no default blue selection, text centered vertically -->
         <Style x:Key="GridCell" TargetType="DataGridCell">
             <Setter Property="BorderThickness" Value="0"/>
@@ -389,20 +412,30 @@
 
                 <!-- Tabs -->
                 <TabControl x:Name="tabMain" Grid.Column="1" Margin="10" Padding="2,6,2,2" SelectionChanged="tabMain_SelectionChanged">
-                    <TabItem Header="Jadwal Produksi">
-                        <DataGrid x:Name="dgvSchedule"
+                    <TabItem Header="Jadwal Produksi (per Jam)">
+                        <DataGrid x:Name="dgvHourly"
                               AutoGenerateColumns="False"
                               IsReadOnly="True"
                               CanUserAddRows="False"
+                              CanUserSortColumns="False"
                               HeadersVisibility="Column"
                               GridLinesVisibility="None"
                               Background="Aquamarine" BorderThickness="0"
                               MinRowHeight="38" FontSize="14"
                               ColumnHeaderStyle="{StaticResource GridHeader}"
-                              RowStyle="{StaticResource GridRow}"
+                              RowStyle="{StaticResource HourRow}"
                               CellStyle="{StaticResource GridCell}">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Urutan"      Binding="{Binding Urutan}"     Width="0.8*"/>
+                                <DataGridTextColumn Header="Jam"   Binding="{Binding JamText}"   Width="0.5*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock"><Setter Property="FontWeight" Value="Bold"/></Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Cycle" Binding="{Binding CycleText}" Width="1.3*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock"><Setter Property="FontWeight" Value="Bold"/></Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                                 <DataGridTextColumn Header="Part Number" Binding="{Binding PartNumber}" Width="1.7*">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
@@ -418,23 +451,97 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
                                 <DataGridTextColumn Header="Posisi + Part" Binding="{Binding PosisiPart}" Width="1.4*"/>
-                                <DataGridTextColumn Header="Jumlah"      Binding="{Binding Jumlah}"     Width="*"/>
-                                <DataGridTextColumn Header="Scan"        Binding="{Binding Discan}"     Width="*"/>
 
-                                <!-- Start time (finished job: real; others: expected) -->
-                                <DataGridTemplateColumn Header="Mulai" Width="1.3*">
+                                <!-- Actual = real scans in this hour. Hour over: green = target reached, red = below target. -->
+                                <DataGridTemplateColumn Header="Actual" Width="1.1*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="{Binding MulaiText}" Style="{StaticResource TimeMain}"/>
+                                                <Border CornerRadius="3" Padding="8,1" HorizontalAlignment="Left">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="Transparent"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding ActualKind}" Value="Ok">
+                                                                    <Setter Property="Background" Value="#16A34A"/>
+                                                                    <Setter Property="TextElement.Foreground" Value="White"/>
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding ActualKind}" Value="Short">
+                                                                    <Setter Property="Background" Value="#DC2626"/>
+                                                                    <Setter Property="TextElement.Foreground" Value="White"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="{Binding Actual}" FontSize="14" FontWeight="SemiBold"/>
+                                                </Border>
+                                                <TextBlock Text="{Binding Note}" Style="{StaticResource TimeNote}"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Target per Jam" Binding="{Binding Target}" Width="1.0*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+
+                    <TabItem Header="Jadwal Produksi (per Job)">
+                        <DataGrid x:Name="dgvSchedule"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              HeadersVisibility="Column"
+                              GridLinesVisibility="None"
+                              Background="Aquamarine" BorderThickness="0"
+                              MinRowHeight="38" FontSize="14"
+                              ColumnHeaderStyle="{StaticResource GridHeader}"
+                              RowStyle="{StaticResource GridRow}"
+                              CellStyle="{StaticResource GridCell}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Part Number" Binding="{Binding PartNumber}" Width="1.7*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Model" Binding="{Binding Model}" Width="1.0*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Posisi + Part" Binding="{Binding PosisiPart}" Width="1.4*"/>
+                                <DataGridTextColumn Header="Scan"        Binding="{Binding Discan}"     Width="0.8*"/>
+                                <DataGridTextColumn Header="Jumlah"      Binding="{Binding Jumlah}"     Width="0.8*"/>
+
+                                <!-- Original plan: planned start - planned end (every job on time, back to back) -->
+                                <DataGridTemplateColumn Header="Rencana" Width="1.5*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding RencanaText}" FontSize="14"/>
+                                                <TextBlock Text="{Binding RencanaNote}" Style="{StaticResource TimeNote}" Foreground="#6B7280"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+
+                                <!-- Actual start: finished / running job only (a job starts when the one before it finished); waiting = blank -->
+                                <DataGridTemplateColumn Header="Mulai" Width="1.2*">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding MulaiText}" FontSize="14"/>
                                                 <TextBlock Text="{Binding MulaiNote}" Style="{StaticResource TimeNote}"/>
                                             </StackPanel>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
 
-                                <!-- End time (finished job: real; others: expected end) -->
-                                <DataGridTemplateColumn Header="Selesai" Width="1.6*">
+                                <!-- End: finished = real (normal text); running = estimate (italic, "estimasi selesai"); waiting = blank -->
+                                <DataGridTemplateColumn Header="Selesai" Width="1.3*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel VerticalAlignment="Center">
@@ -446,7 +553,7 @@
                                 </DataGridTemplateColumn>
 
                                 <!-- Planned end minus expected end: green + = ahead, red - = late, grey = on time -->
-                                <DataGridTemplateColumn Header="Selisih Waktu" Width="1.6*">
+                                <DataGridTemplateColumn Header="Selisih" Width="1.4*">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel VerticalAlignment="Center">

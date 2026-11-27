@@ -30,6 +30,8 @@ namespace LineProductionWPF
         private DateTime _date = DateTime.Today;
         private List<KanbanJob> _jobs = new List<KanbanJob>();
         private KanbanJob _current;                                   // the job on the boards
+        private Dictionary<(string Barcode, int Hour), int> _hourlyScans = new Dictionary<(string Barcode, int Hour), int>();
+        private List<HourSlotRow> _hourRows = new List<HourSlotRow>();   // "Jadwal Produksi (per Jam)" tab
         private DateTime _lastRead = DateTime.MinValue;
         private bool _reading;
         private int? _lastScheduleRevisionVersion;
@@ -120,6 +122,7 @@ namespace LineProductionWPF
             NomorLine.Text = line.Name;
             if (ReferenceEquals(tabMain.SelectedItem, tabWeb)) _ = ShowWebAsync();   // web tab is open: show the new line
             _jobs = new List<KanbanJob>();
+            _hourlyScans = new Dictionary<(string Barcode, int Hour), int>();
             _terimaBoxRows.Clear();
             _labelStatus.Clear();
             _lastScheduleRevisionVersion = null;
@@ -141,6 +144,7 @@ namespace LineProductionWPF
             {
                 _date = DateTime.Today;
                 _jobs = new List<KanbanJob>();
+                _hourlyScans = new Dictionary<(string Barcode, int Hour), int>();
                 _terimaBoxRows.Clear();
                 _labelStatus.Clear();
                 _lastScheduleRevisionVersion = null;
@@ -175,6 +179,15 @@ namespace LineProductionWPF
                     {
                         // keep the rows already on screen; the next refresh tries again
                     }
+                    Dictionary<(string Barcode, int Hour), int>? hourlyScans = null;
+                    try
+                    {
+                        hourlyScans = await Task.Run(() => SchedulerDb.LoadHourlyScans(date, line.Id));
+                    }
+                    catch
+                    {
+                        // keep the per-hour actuals already on screen; the next refresh tries again
+                    }
                     SchedulerDb.ScheduleRevision? revision = null;
                     string? revisionReadError = null;
                     try
@@ -189,6 +202,7 @@ namespace LineProductionWPF
                     if (ReferenceEquals(line, _line) && date == _date)
                     {
                         _jobs = jobs;
+                        if (hourlyScans != null) _hourlyScans = hourlyScans;
                         if (completedBoxes != null)
                             SyncTerimaBoxRows(completedBoxes);
                         // Take box progress from this read only if no scan was saved or is waiting meanwhile,
@@ -352,6 +366,25 @@ namespace LineProductionWPF
             // the table: re-bind when the jobs list changed, otherwise only refresh the numbers
             if (!ReferenceEquals(dgvSchedule.ItemsSource, _jobs)) dgvSchedule.ItemsSource = _jobs;
             else dgvSchedule.Items.Refresh();
+
+            RenderHourly(DateTime.Now);
+        }
+
+        // Per-hour table: same rows as last time (only the numbers changed) = keep the rows so the scroll position stays.
+        private void RenderHourly(DateTime now)
+        {
+            List<HourSlotRow> rows = HourlyPlanBuilder.Build(_jobs, _hourlyScans, _current, _date, now);
+            bool sameRows = rows.Count == _hourRows.Count && rows.Select(r => r.Key).SequenceEqual(_hourRows.Select(r => r.Key));
+            if (sameRows && ReferenceEquals(dgvHourly.ItemsSource, _hourRows))
+            {
+                for (int i = 0; i < rows.Count; i++) _hourRows[i].CopyValuesFrom(rows[i]);
+                dgvHourly.Items.Refresh();
+            }
+            else
+            {
+                _hourRows = rows;
+                dgvHourly.ItemsSource = _hourRows;
+            }
         }
 
         // Customer name + logo of the current job. Render() runs every second, so only reload the logo file when the customer changes.

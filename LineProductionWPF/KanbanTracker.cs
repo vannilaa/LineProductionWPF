@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using ProductionTime.Shared;
 
@@ -133,6 +133,10 @@ namespace LineProductionWPF
             return timing.Start.HasValue ? "Menunggu (mulai " + timing.Start.Value.ToString("HH:mm") + ")" : "Menunggu";
         }
 
+        // "rencana asli 08:00 - 10:15, tidak termasuk istirahat 12-13": the plan now has its own column, keep the rest.
+        private static string DiffNoteWithoutPlan(string note) =>
+            string.Join(", ", note.Split(", ").Where(p => !p.StartsWith("rencana asli", StringComparison.Ordinal)));
+
         public KanbanNumbers Calculate(IList<KanbanJob> jobs, DateTime now)
         {
             var n = new KanbanNumbers();
@@ -157,6 +161,7 @@ namespace LineProductionWPF
                     job.Status = StatusOf(job, n.Current, timing);
                     job.Mulai = null;
                     job.Selesai = null;
+                    job.PlannedStart = null;
                     job.PlannedEnd = null;
                     job.IsProjected = false;
                     job.MulaiNote = "";
@@ -172,14 +177,21 @@ namespace LineProductionWPF
                     double elapsed = WorkCalendar.WorkingSeconds(start, countUntil) - PausedWorkingSeconds(start, countUntil, now);
                     job.Count = (int)Math.Min(Math.Max(0, elapsed) * job.Target / 3600.0, job.Jumlah);
                     job.Status = StatusOf(job, n.Current, timing);
-                    job.Mulai = timing.Start;
-                    job.Selesai = timing.End;
+                    // Per-job table: Rencana = the original plan (always shown). Mulai / Selesai / Selisih are only shown once
+                    // the job has really started: finished = real times, running = real start + estimated end (italic),
+                    // waiting = blank.
+                    bool running = timing.IsCurrent && timing.HasStarted;
+                    bool shown = timing.IsComplete || running;
+                    job.PlannedStart = timing.PlannedStart;
                     job.PlannedEnd = timing.PlannedEnd;
-                    job.IsProjected = !timing.IsComplete;
-                    job.DiffMinutes = timing.DifferenceMinutes;
-                    job.MulaiNote = timing.StartNote.Length == 0 ? "" : "(" + timing.StartNote + ")";
-                    job.SelesaiNote = timing.EndNote.Length == 0 ? "" : "(" + timing.EndNote + ")";
-                    job.DiffNote = timing.DifferenceNote.Length == 0 ? "" : "(" + timing.DifferenceNote + ")";
+                    job.Mulai = shown ? timing.Start : null;
+                    job.Selesai = shown ? timing.End : null;
+                    job.IsProjected = running;
+                    job.DiffMinutes = shown ? timing.DifferenceMinutes : null;
+                    job.MulaiNote = shown && timing.StartNote.Length > 0 ? "(" + timing.StartNote + ")" : "";
+                    job.SelesaiNote = running ? "(estimasi selesai)" : "";
+                    job.DiffNote = shown ? "(" + DiffNoteWithoutPlan(timing.DifferenceNote) + ")" : "";
+                    if (job.DiffNote == "()") job.DiffNote = "";
                 }
 
                 n.TargetDay += job.Jumlah;
