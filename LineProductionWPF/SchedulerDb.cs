@@ -198,6 +198,30 @@ namespace LineProductionWPF
             return baseUrl + "?filter_line=" + System.Net.WebUtility.UrlEncode(filter);
         }
 
+        /// <summary>
+        /// Loads the work calendar saved in DailyScheduler (gear button, table dbo.app_setting key 'work_calendar', sql/012
+        /// in the DailyScheduler repo) into the shared WorkCalendar, so both apps calculate the same times.
+        /// Nothing saved / no table yet / offline: the calendar in use stays as it is (the old default hours at first).
+        /// </summary>
+        public static void LoadWorkCalendar()
+        {
+            try
+            {
+                using var con = new SqlConnection(ConnectionString);
+                con.Open();
+                using var cmd = con.CreateCommand();
+                cmd.CommandText = "IF OBJECT_ID(N'dbo.app_setting', N'U') IS NOT NULL " +
+                                  "SELECT value FROM dbo.app_setting WHERE [key] = N'work_calendar'";
+                object? v = cmd.ExecuteScalar();
+                if (v is string json && json.Length > 0)
+                    ProductionTime.Shared.WorkCalendar.Settings = ProductionTime.Shared.WorkCalendarSettings.FromJson(json);
+            }
+            catch
+            {
+                // keep the calendar already in use; the next refresh tries again
+            }
+        }
+
         public static string GetLineMapCode(int lineProductionId)
         {
             using var con = new SqlConnection(ConnectionString);
@@ -545,7 +569,7 @@ namespace LineProductionWPF
         }
 
         private static string FormatQuantity(int value) => value.ToString("N0", System.Globalization.CultureInfo.CurrentCulture);
-        private static string FormatStartTime(TimeSpan? value) => value.HasValue ? value.Value.ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture) : "otomatis";
+        private static string FormatStartTime(TimeSpan? value) => value.HasValue ? value.Value.ToString(@"hh\:mm", System.Globalization.CultureInfo.InvariantCulture) : "auto";
         private static string FormatYesNo(bool value) => value ? "Ya" : "Tidak";
         private static string FormatPrinter(string value) => string.IsNullOrEmpty(value) ? "-" : value;
 

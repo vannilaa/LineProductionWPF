@@ -162,6 +162,8 @@ namespace LineProductionWPF
                 int versionBefore = _scanVersion;
                 try
                 {
+                    // the work calendar can be changed in DailyScheduler at any time: read it with every refresh
+                    await Task.Run(SchedulerDb.LoadWorkCalendar);
                     var jobs = await Task.Run(() => SchedulerDb.LoadJobs(date, line.Id));
                     // Read separately: a failure here must not stop the job list from refreshing.
                     List<ScannedBoxRow>? completedBoxes = null;
