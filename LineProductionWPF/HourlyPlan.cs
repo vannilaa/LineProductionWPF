@@ -21,7 +21,7 @@ namespace LineProductionWPF
 
         public bool IsFirstOfHour { get; set; }
         public bool IsCurrentHour { get; set; }
-        public bool IsCurrentJob { get; set; }        // current hour + the job that is running now
+        public bool IsCurrentJob { get; set; }        // current hour + the job that is running now (same Urutan, not just same part number)
         /// <summary>"" = hour not over yet (or nothing planned), "Ok" = target reached, "Short" = below target.</summary>
         public string ActualKind { get; set; } = "";
 
@@ -116,8 +116,13 @@ namespace LineProductionWPF
                     row.CycleText = row.Hour.ToString("00") + ":00-" + ((row.Hour + 1) % 24).ToString("00") + ":00";
                 }
                 row.IsCurrentHour = today && row.Hour == now.Hour;
+                // The running job is matched by its schedule row (Urutan), like the per-job tab: the same part number
+                // can be in the schedule twice, and only the row of the job that runs now may light up.
+                // An unplanned row (Urutan 0, "di luar rencana") of that part this hour = scans of the running job
+                // when it runs late, so it lights up too.
                 row.IsCurrentJob = row.IsCurrentHour && current != null && !current.IsComplete &&
-                                   string.Equals(row.Barcode, current.Barcode, StringComparison.OrdinalIgnoreCase);
+                                   string.Equals(row.Barcode, current.Barcode, StringComparison.OrdinalIgnoreCase) &&
+                                   (row.Urutan == current.Urutan || row.Urutan == 0);
                 bool hourOver = date.Date < now.Date || (today && row.Hour < now.Hour);
                 row.ActualKind = !hourOver || row.Target <= 0 ? "" : row.Actual >= row.Target ? "Ok" : "Short";
             }
