@@ -142,11 +142,41 @@
                 <DataTrigger Binding="{Binding IsCurrentHour}" Value="True">
                     <Setter Property="Background" Value="#FFF4CC"/>
                 </DataTrigger>
+                <!-- The running job is NOT painted on the whole row: see HourJobCell (Part Number to the right only). -->
+            </Style.Triggers>
+        </Style>
+
+        <!-- Per-hour table, cells from Part Number to the right: the running job is highlighted here, so Jam and
+             Cycle (which belong to the whole hour) keep the current-hour colour. -->
+        <Style x:Key="HourJobCell" TargetType="DataGridCell">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridCell">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}" Padding="8,0">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
                 <DataTrigger Binding="{Binding IsCurrentJob}" Value="True">
                     <Setter Property="Background" Value="#FFD966"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Part Number cell: same, plus the orange bar on its left edge where the highlight starts. -->
+        <Style x:Key="HourJobFirstCell" TargetType="DataGridCell" BasedOn="{StaticResource HourJobCell}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsCurrentJob}" Value="True">
+                    <Setter Property="Background" Value="#FFD966"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
                     <Setter Property="BorderThickness" Value="4,0,0,0"/>
                     <Setter Property="BorderBrush" Value="#F59E0B"/>
-                    <Setter Property="FontWeight" Value="SemiBold"/>
                 </DataTrigger>
             </Style.Triggers>
         </Style>
@@ -424,19 +454,19 @@
                               MinRowHeight="38" FontSize="14"
                               ColumnHeaderStyle="{StaticResource GridHeader}"
                               RowStyle="{StaticResource HourRow}"
-                              CellStyle="{StaticResource GridCell}">
+                              CellStyle="{StaticResource HourJobCell}">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Jam"   Binding="{Binding JamText}"   Width="0.5*">
+                                <DataGridTextColumn Header="Jam"   Binding="{Binding JamText}"   Width="0.5*" CellStyle="{StaticResource GridCell}">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock"><Setter Property="FontWeight" Value="Bold"/></Style>
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
-                                <DataGridTextColumn Header="Cycle" Binding="{Binding CycleText}" Width="1.3*">
+                                <DataGridTextColumn Header="Cycle" Binding="{Binding CycleText}" Width="1.3*" CellStyle="{StaticResource GridCell}">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock"><Setter Property="FontWeight" Value="Bold"/></Style>
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
-                                <DataGridTextColumn Header="Part Number" Binding="{Binding PartNumber}" Width="1.7*">
+                                <DataGridTextColumn Header="Part Number" Binding="{Binding PartNumber}" Width="1.7*" CellStyle="{StaticResource HourJobFirstCell}">
                                     <DataGridTextColumn.ElementStyle>
                                         <Style TargetType="TextBlock">
                                             <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
