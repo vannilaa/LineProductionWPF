@@ -65,8 +65,14 @@ dotnet_naming_style.underscore_camel.required_prefix = _
 dotnet_naming_rule.types_pascal.symbols = types_and_members
 dotnet_naming_rule.types_pascal.style = pascal
 dotnet_naming_rule.types_pascal.severity = warning
-dotnet_naming_symbols.types_and_members.applicable_kinds = class, struct, interface, enum, method, property, event
+dotnet_naming_symbols.types_and_members.applicable_kinds = class, struct, interface, enum, property, event
 dotnet_naming_style.pascal.capitalization = pascal_case
+
+# methods: PascalCase suggested only, so WPF handlers like btnSimpan_Click (wired in XAML) are not flagged
+dotnet_naming_rule.methods_pascal.symbols = methods
+dotnet_naming_rule.methods_pascal.style = pascal
+dotnet_naming_rule.methods_pascal.severity = suggestion
+dotnet_naming_symbols.methods.applicable_kinds = method
 
 # analyzer tuning for a WPF desktop app
 dotnet_diagnostic.CA1303.severity = none   # localized string literals (UI text is Indonesian)
