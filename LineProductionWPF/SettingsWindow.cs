@@ -203,17 +203,25 @@ namespace LineProductionWPF
         // ---------------- small helpers ----------------
         private static TextBlock Header(string text) => new TextBlock
         {
-            Text = text, FontSize = 15, FontWeight = FontWeights.Bold, Margin = new Thickness(0, 12, 0, 4)
+            Text = text,
+            FontSize = 15,
+            FontWeight = FontWeights.Bold,
+            Margin = new Thickness(0, 12, 0, 4)
         };
 
         private static TextBlock Hint(string text) => new TextBlock
         {
-            Text = text, FontSize = 11, Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap
+            Text = text,
+            FontSize = 11,
+            Foreground = Brushes.DimGray,
+            TextWrapping = TextWrapping.Wrap
         };
 
         private static TextBlock Label(string text) => new TextBlock
         {
-            Text = text, VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 6, 0)
+            Text = text,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0)
         };
     }
 }

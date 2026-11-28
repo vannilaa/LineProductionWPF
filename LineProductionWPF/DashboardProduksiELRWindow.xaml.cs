@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
@@ -595,17 +595,17 @@ namespace LineProductionWPF
                 {
                     string checker = AppSettings.Current.CheckerFor(p.Line.Id);
                     var printResult = BoxLabelPrinter.Print(
-                        customer:     p.Job.Customer,
-                        model:        p.Job.Model,
-                        jobNo:        p.Job.JobNo,
+                        customer: p.Job.Customer,
+                        model: p.Job.Model,
+                        jobNo: p.Job.JobNo,
                         // No part number on the product: the barcode, same as Cetak Ulang (LoadBoxForReprint), so both labels match.
-                        partNumber:   string.IsNullOrWhiteSpace(p.Job.PartNumber) || p.Job.PartNumber == "-" ? p.Job.Barcode : p.Job.PartNumber,
-                        productName:  p.Job.ProductName,
-                        qtyPerBox:    p.Job.QtyPerBox,
-                        boxSerial:    result.BoxSerial,
-                        lineName:     p.Line.Name,
-                        prodDate:     _date,    // schedule date = box.tanggal, same date a reprint uses
-                        checkerName:  checker,
+                        partNumber: string.IsNullOrWhiteSpace(p.Job.PartNumber) || p.Job.PartNumber == "-" ? p.Job.Barcode : p.Job.PartNumber,
+                        productName: p.Job.ProductName,
+                        qtyPerBox: p.Job.QtyPerBox,
+                        boxSerial: result.BoxSerial,
+                        lineName: p.Line.Name,
+                        prodDate: _date,    // schedule date = box.tanggal, same date a reprint uses
+                        checkerName: checker,
                         qrModelPartNumber: p.Job.QrModelPartNumber);
                     autoPrintStatus = BoxLabelPrinter.Describe(printResult);
                     labelMissing = printResult != BoxLabelPrinter.PrintResult.Printed;
@@ -655,9 +655,9 @@ namespace LineProductionWPF
                     // Add the completed box to the Terima Box / Pallet grid.
                     _terimaBoxRows.Insert(0, new ScannedBoxRow
                     {
-                        BoxSerial  = result.BoxSerial,
+                        BoxSerial = result.BoxSerial,
                         PartNumber = p.Job.PartNumber,
-                        Model      = p.Job.Model,
+                        Model = p.Job.Model,
                         PosisiPart = p.Job.PosisiPart,
                         JamTutupBox = DateTime.Now.ToString("HH:mm", CultureInfo.InvariantCulture),
                         LabelStatus = autoPrintStatus ?? "",

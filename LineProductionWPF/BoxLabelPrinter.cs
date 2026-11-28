@@ -19,7 +19,7 @@ namespace LineProductionWPF
         // Label physical size: 9 cm wide × 6 cm tall (landscape).
         // 1 cm ≈ 37.795 WPF device-independent pixels (96 dpi).
         private const double CmToPx = 96.0 / 2.54;
-        private const double LabelWidth  = 9.0 * CmToPx;   // ≈ 340 px
+        private const double LabelWidth = 9.0 * CmToPx;   // ≈ 340 px
         private const double LabelHeight = 6.0 * CmToPx;   // ≈ 227 px
 
         // Manual fine-tune (mm) applied after the driver offset correction.
@@ -44,10 +44,10 @@ namespace LineProductionWPF
         /// <summary>Short Indonesian text for a non-printed result, for the status bar / grid.</summary>
         public static string Describe(PrintResult r) => r switch
         {
-            PrintResult.Printed         => "Tercetak",
+            PrintResult.Printed => "Tercetak",
             PrintResult.PrinterNotReady => "Printer tidak siap",
-            PrintResult.PaperMismatch   => "Ukuran kertas salah",
-            _                           => "Gagal cetak"
+            PrintResult.PaperMismatch => "Ukuran kertas salah",
+            _ => "Gagal cetak"
         };
 
         /// <summary>
@@ -98,7 +98,7 @@ namespace LineProductionWPF
                 }
 
                 // Read the printer's actual printable area before building/scaling.
-                double targetW = dialog.PrintableAreaWidth  > 0 ? dialog.PrintableAreaWidth  : LabelWidth;
+                double targetW = dialog.PrintableAreaWidth > 0 ? dialog.PrintableAreaWidth : LabelWidth;
                 double targetH = dialog.PrintableAreaHeight > 0 ? dialog.PrintableAreaHeight : LabelHeight;
 
                 var visual = BuildLabel(
@@ -113,10 +113,10 @@ namespace LineProductionWPF
                 // Wrap in a Viewbox sized to the printer's printable area so it fills the label cleanly.
                 var container = new Viewbox
                 {
-                    Width   = targetW,
-                    Height  = targetH,
+                    Width = targetW,
+                    Height = targetH,
                     Stretch = Stretch.Uniform,
-                    Child   = visual
+                    Child = visual
                 };
                 container.Measure(new Size(targetW, targetH));
                 container.Arrange(new Rect(0, 0, targetW, targetH));
@@ -125,7 +125,7 @@ namespace LineProductionWPF
                 // Rasterize at 203 DPI (thermal label printer native DPI) so the driver
                 // receives a crisp 1:1 bitmap with no XPS vector issues.
                 const double dpi = 203.0;
-                int pxWidth  = (int)Math.Ceiling(targetW * dpi / 96.0);
+                int pxWidth = (int)Math.Ceiling(targetW * dpi / 96.0);
                 int pxHeight = (int)Math.Ceiling(targetH * dpi / 96.0);
                 var rtb = new RenderTargetBitmap(pxWidth, pxHeight, dpi, dpi, PixelFormats.Pbgra32);
                 rtb.Render(container);
@@ -133,9 +133,9 @@ namespace LineProductionWPF
 
                 var printImage = new Image
                 {
-                    Source  = rtb,
-                    Width   = targetW,
-                    Height  = targetH,
+                    Source = rtb,
+                    Width = targetW,
+                    Height = targetH,
                     Stretch = Stretch.Fill
                 };
                 RenderOptions.SetBitmapScalingMode(printImage, BitmapScalingMode.NearestNeighbor);
@@ -198,16 +198,16 @@ namespace LineProductionWPF
 
             var root = new Border
             {
-                Width      = LabelWidth,
-                Height     = LabelHeight,
+                Width = LabelWidth,
+                Height = LabelHeight,
                 Background = Brushes.White,
-                Padding    = new Thickness(8, 6, 8, 6) // safe print margin so borders are never cut off
+                Padding = new Thickness(8, 6, 8, 6) // safe print margin so borders are never cut off
             };
 
             var frame = new Border
             {
-                Background      = Brushes.White,
-                BorderBrush     = borderBrush,
+                Background = Brushes.White,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(lineThickness)
             };
 
@@ -220,18 +220,18 @@ namespace LineProductionWPF
             // ── Row 0: Customer ──────────────────────────────────────────────────
             var customerBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, 0, lineThickness),
-                Padding         = new Thickness(4, 2, 4, 2)
+                Padding = new Thickness(4, 2, 4, 2)
             };
             customerBorder.Child = new TextBlock
             {
-                Text          = string.IsNullOrWhiteSpace(customer) ? "PT. TOYOTA MOTOR MANUFACTURING INDONESIA" : customer,
-                FontSize      = 12,
-                FontWeight    = FontWeights.Bold,
-                Foreground    = Brushes.Black,
+                Text = string.IsNullOrWhiteSpace(customer) ? "PT. TOYOTA MOTOR MANUFACTURING INDONESIA" : customer,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.Black,
                 TextAlignment = TextAlignment.Center,
-                TextTrimming  = TextTrimming.CharacterEllipsis
+                TextTrimming = TextTrimming.CharacterEllipsis
             };
             Grid.SetRow(customerBorder, 0);
             grid.Children.Add(customerBorder);
@@ -252,35 +252,35 @@ namespace LineProductionWPF
 
             var leftTopBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, lineThickness, lineThickness),
-                Padding         = new Thickness(4, 2, 4, 2)
+                Padding = new Thickness(4, 2, 4, 2)
             };
             var leftTopStack = new StackPanel
             {
-                VerticalAlignment   = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
             leftTopStack.Children.Add(new TextBlock
             {
-                Text          = string.IsNullOrWhiteSpace(model) ? "-" : model,
-                FontSize      = 17,
-                FontWeight    = FontWeights.Bold,
-                Foreground    = Brushes.Black,
+                Text = string.IsNullOrWhiteSpace(model) ? "-" : model,
+                FontSize = 17,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.Black,
                 TextAlignment = TextAlignment.Center,
-                TextWrapping  = TextWrapping.Wrap
+                TextWrapping = TextWrapping.Wrap
             });
             if (!string.IsNullOrWhiteSpace(jobNo) && jobNo != "-")
             {
                 leftTopStack.Children.Add(new TextBlock
                 {
-                    Text          = jobNo,
-                    FontSize      = 21,
-                    FontWeight    = FontWeights.Bold,
-                    Foreground    = Brushes.Black,
+                    Text = jobNo,
+                    FontSize = 21,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = Brushes.Black,
                     TextAlignment = TextAlignment.Center,
-                    TextWrapping  = TextWrapping.Wrap,
-                    Margin        = new Thickness(0, 1, 0, 0)
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 1, 0, 0)
                 });
             }
             leftTopBorder.Child = leftTopStack;
@@ -289,35 +289,35 @@ namespace LineProductionWPF
 
             var rightTopBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, qrModelPartNumber ? lineThickness : 0, lineThickness),
-                Padding         = new Thickness(4, 2, 4, 2)
+                Padding = new Thickness(4, 2, 4, 2)
             };
             var rightTopStack = new StackPanel
             {
-                VerticalAlignment   = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center
             };
             rightTopStack.Children.Add(new TextBlock
             {
-                Text          = partNumber,
-                FontSize      = 17,
-                FontWeight    = FontWeights.Bold,
-                Foreground    = Brushes.Black,
+                Text = partNumber,
+                FontSize = 17,
+                FontWeight = FontWeights.Bold,
+                Foreground = Brushes.Black,
                 TextAlignment = TextAlignment.Center,
-                TextWrapping  = TextWrapping.Wrap
+                TextWrapping = TextWrapping.Wrap
             });
             if (!string.IsNullOrWhiteSpace(productName))
             {
                 rightTopStack.Children.Add(new TextBlock
                 {
-                    Text          = productName,
-                    FontSize      = 10,
-                    FontWeight    = FontWeights.Bold,
-                    Foreground    = Brushes.Black,
+                    Text = productName,
+                    FontSize = 10,
+                    FontWeight = FontWeights.Bold,
+                    Foreground = Brushes.Black,
                     TextAlignment = TextAlignment.Center,
-                    TextWrapping  = TextWrapping.Wrap,
-                    Margin        = new Thickness(0, 2, 0, 0)
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 2, 0, 0)
                 });
             }
             rightTopBorder.Child = rightTopStack;
@@ -328,12 +328,12 @@ namespace LineProductionWPF
             {
                 var qrTopBorder = new Border
                 {
-                    BorderBrush     = borderBrush,
+                    BorderBrush = borderBrush,
                     BorderThickness = new Thickness(0, 0, 0, lineThickness),
-                    Padding         = new Thickness(2)
+                    Padding = new Thickness(2)
                 };
                 var qrElement = MakeQrBitmap($"{model.Trim()};{partNumber.Trim()}", margin: 0, QRCodeGenerator.ECCLevel.M);
-                qrElement.Width  = 48;
+                qrElement.Width = 48;
                 qrElement.Height = 48;
                 qrTopBorder.Child = qrElement;
                 Grid.SetColumn(qrTopBorder, 2);
@@ -356,9 +356,9 @@ namespace LineProductionWPF
 
             var qtyBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, lineThickness, lineThickness),
-                Padding         = new Thickness(3, 2, 3, 2)
+                Padding = new Thickness(3, 2, 3, 2)
             };
             var qtyGrid = new Grid();
             qtyGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -368,11 +368,11 @@ namespace LineProductionWPF
             qtyGrid.Children.Add(qtyLbl);
             var qtyVal = new TextBlock
             {
-                Text                = qtyPerBox.ToString(CultureInfo.InvariantCulture),
-                FontSize            = 32,
-                FontWeight          = FontWeights.Bold,
+                Text = qtyPerBox.ToString(CultureInfo.InvariantCulture),
+                FontSize = 32,
+                FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetRow(qtyVal, 1);
             qtyGrid.Children.Add(qtyVal);
@@ -382,9 +382,9 @@ namespace LineProductionWPF
 
             var dateBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, lineThickness, 0),
-                Padding         = new Thickness(3, 2, 3, 2)
+                Padding = new Thickness(3, 2, 3, 2)
             };
             var dateGrid = new Grid();
             dateGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -394,14 +394,14 @@ namespace LineProductionWPF
             dateGrid.Children.Add(dateLbl);
             var dateVal = new Viewbox
             {
-                Stretch             = Stretch.Uniform,
-                StretchDirection    = StretchDirection.DownOnly,
+                Stretch = Stretch.Uniform,
+                StretchDirection = StretchDirection.DownOnly,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
                 Child = new TextBlock
                 {
-                    Text       = prodDate.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture),
-                    FontSize   = 13,
+                    Text = prodDate.ToString("dd-MMM-yyyy", CultureInfo.InvariantCulture),
+                    FontSize = 13,
                     FontWeight = FontWeights.Bold
                 }
             };
@@ -417,9 +417,9 @@ namespace LineProductionWPF
             // Col 1: QR Code
             var qrBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, lineThickness, 0),
-                Padding         = new Thickness(2)
+                Padding = new Thickness(2)
             };
             string qrPayload = boxSerial.Length > 0 ? boxSerial : partNumber;
             qrBorder.Child = MakeQrBitmap(qrPayload, margin: 0, QRCodeGenerator.ECCLevel.M);
@@ -433,17 +433,17 @@ namespace LineProductionWPF
 
             var lineBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, 0, lineThickness),
-                Padding         = new Thickness(3, 1, 3, 1)
+                Padding = new Thickness(3, 1, 3, 1)
             };
             lineBorder.Child = new TextBlock
             {
-                Text          = string.IsNullOrWhiteSpace(lineName) ? "-" : lineName,
-                FontSize      = 14,
-                FontWeight    = FontWeights.Bold,
+                Text = string.IsNullOrWhiteSpace(lineName) ? "-" : lineName,
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
                 TextAlignment = TextAlignment.Center,
-                TextTrimming  = TextTrimming.CharacterEllipsis
+                TextTrimming = TextTrimming.CharacterEllipsis
             };
             Grid.SetRow(lineBorder, 0);
             col2Grid.Children.Add(lineBorder);
@@ -454,19 +454,19 @@ namespace LineProductionWPF
 
             var lotBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, lineThickness, 0),
-                Padding         = new Thickness(3, 2, 3, 2)
+                Padding = new Thickness(3, 2, 3, 2)
             };
             var lotStack = new StackPanel();
             lotStack.Children.Add(new TextBlock { Text = "Lot #", FontSize = 10, FontWeight = FontWeights.Bold });
             lotStack.Children.Add(new TextBlock
             {
-                Text         = boxSerial.Length > 0 ? boxSerial : "-",
-                FontSize     = 14,
-                FontWeight   = FontWeights.Bold,
+                Text = boxSerial.Length > 0 ? boxSerial : "-",
+                FontSize = 14,
+                FontWeight = FontWeights.Bold,
                 TextWrapping = TextWrapping.Wrap,
-                Margin       = new Thickness(0, 2, 0, 0)
+                Margin = new Thickness(0, 2, 0, 0)
             });
             lotBorder.Child = lotStack;
             Grid.SetColumn(lotBorder, 0);
@@ -489,7 +489,7 @@ namespace LineProductionWPF
             // ── Row 3: Footer – PT. SUNGWOO INDONESIA | Checker name ─────────────
             var footerBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, lineThickness, 0, 0)
             };
             var footerGrid = new Grid();
@@ -500,17 +500,17 @@ namespace LineProductionWPF
 
             var mfgBorder = new Border
             {
-                BorderBrush     = borderBrush,
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(0, 0, lineThickness, 0),
-                Padding         = new Thickness(6, 2, 6, 2)
+                Padding = new Thickness(6, 2, 6, 2)
             };
             mfgBorder.Child = new TextBlock
             {
-                Text                = Manufacturer,
-                FontSize            = 12,
-                FontWeight          = FontWeights.Bold,
+                Text = Manufacturer,
+                FontSize = 12,
+                FontWeight = FontWeights.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(mfgBorder, 0);
             footerGrid.Children.Add(mfgBorder);
@@ -522,15 +522,15 @@ namespace LineProductionWPF
             // Checker typed in Pengaturan; shrinks to fit when the name is long.
             checkerBorder.Child = new Viewbox
             {
-                Stretch          = Stretch.Uniform,
+                Stretch = Stretch.Uniform,
                 StretchDirection = StretchDirection.DownOnly,
                 Child = new TextBlock
                 {
-                    Text                = (checkerName ?? "").Trim(),
-                    FontSize            = 12,
-                    FontWeight          = FontWeights.Bold,
+                    Text = (checkerName ?? "").Trim(),
+                    FontSize = 12,
+                    FontWeight = FontWeights.Bold,
                     HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment   = VerticalAlignment.Center
+                    VerticalAlignment = VerticalAlignment.Center
                 }
             };
             Grid.SetColumn(checkerBorder, 1);
@@ -597,7 +597,7 @@ namespace LineProductionWPF
                 Stretch = Stretch.Uniform,
                 Margin = new Thickness(margin),
                 HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment   = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center
             };
             RenderOptions.SetBitmapScalingMode(img, BitmapScalingMode.NearestNeighbor);
             RenderOptions.SetEdgeMode(img, EdgeMode.Aliased);
