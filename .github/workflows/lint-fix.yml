@@ -1,9 +1,11 @@
 name: Lint fix
 
-# Manual: applies safe, mechanical lint fixes and commits them to the branch it runs on.
+# Manual or on push to lint/** branches: applies safe, mechanical lint fixes and commits them to the branch it runs on.
 # Whitespace always; IDE0005/IDE0044/IDE0049 only when DAILYSCHEDULER_TOKEN is set (needs a build).
 on:
   workflow_dispatch:
+  push:
+    branches: ["lint/**"]
 
 permissions:
   contents: write
