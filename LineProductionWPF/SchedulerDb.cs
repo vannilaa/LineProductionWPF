@@ -270,15 +270,15 @@ namespace LineProductionWPF
             if (!r.Read()) return null;
 
             return new BoxLabelData(
-                Customer:    r.GetString(0).Trim(),
-                Model:       r.GetString(1).Trim(),
-                JobNo:       r.GetString(2).Trim(),
-                PartNumber:  r.GetString(3).Trim(),
+                Customer: r.GetString(0).Trim(),
+                Model: r.GetString(1).Trim(),
+                JobNo: r.GetString(2).Trim(),
+                PartNumber: r.GetString(3).Trim(),
                 ProductName: r.GetString(4).Trim(),
-                QtyPerBox:   Convert.ToInt32(r.GetValue(5)),   // works for int / smallint / decimal columns
-                BoxSerial:   r.GetString(6).Trim(),
-                LineName:    r.GetString(7).Trim(),
-                ProdDate:    r.GetDateTime(8),
+                QtyPerBox: Convert.ToInt32(r.GetValue(5)),   // works for int / smallint / decimal columns
+                BoxSerial: r.GetString(6).Trim(),
+                LineName: r.GetString(7).Trim(),
+                ProdDate: r.GetDateTime(8),
                 QrModelPartNumber: Convert.ToBoolean(r.GetValue(9)));
         }
 
@@ -320,10 +320,10 @@ namespace LineProductionWPF
 
                 list.Add(new ScannedBoxRow
                 {
-                    BoxSerial   = r.GetString(0).Trim(),
-                    PartNumber  = r.GetString(1).Trim(),
-                    Model       = r.GetString(2).Trim(),
-                    PosisiPart  = posisiPart,
+                    BoxSerial = r.GetString(0).Trim(),
+                    PartNumber = r.GetString(1).Trim(),
+                    Model = r.GetString(2).Trim(),
+                    PosisiPart = posisiPart,
                     JamTutupBox = closedAt.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture),
                     PrintedInDb = printCount > 0,
                     ReprintCount = Convert.ToInt32(r.GetValue(7)),

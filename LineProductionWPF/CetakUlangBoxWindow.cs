@@ -261,16 +261,16 @@ namespace LineProductionWPF
                 Note = note;
 
                 var printResult = BoxLabelPrinter.Print(
-                    customer:    box.Customer,
-                    model:       box.Model,
-                    jobNo:       box.JobNo,
-                    partNumber:  box.PartNumber,
+                    customer: box.Customer,
+                    model: box.Model,
+                    jobNo: box.JobNo,
+                    partNumber: box.PartNumber,
                     productName: box.ProductName,
-                    qtyPerBox:   box.QtyPerBox,
-                    boxSerial:   box.BoxSerial,
-                    lineName:    box.LineName,
-                    prodDate:           box.ProdDate,   
-                    qrModelPartNumber:  box.QrModelPartNumber,
+                    qtyPerBox: box.QtyPerBox,
+                    boxSerial: box.BoxSerial,
+                    lineName: box.LineName,
+                    prodDate: box.ProdDate,
+                    qrModelPartNumber: box.QrModelPartNumber,
                     checkerName: checker,
                     askOnPaperMismatch: true);
 

@@ -32,7 +32,9 @@ namespace LineProductionWPF
             root.Children.Add(new TextBlock
             {
                 Text = "Tekan Enter bila nama masih sama. Bisa diganti kapan saja lewat Pengaturan.",
-                FontSize = 11, Foreground = Brushes.DimGray, TextWrapping = TextWrapping.Wrap
+                FontSize = 11,
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap
             });
             root.Children.Add(_error);
 
