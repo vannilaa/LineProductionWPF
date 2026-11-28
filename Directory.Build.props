@@ -1,0 +1,10 @@
+<Project>
+  <!-- Lint: .NET analyzers + code-style rules from .editorconfig, reported as build warnings.
+       Warnings do not fail the Visual Studio build. -->
+  <PropertyGroup>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

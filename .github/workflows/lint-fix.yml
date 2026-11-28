@@ -1,0 +1,49 @@
+name: Lint fix
+
+# Manual or on push to lint/** branches: applies safe, mechanical lint fixes and commits them to the branch it runs on.
+# Whitespace always; IDE0005/IDE0044/IDE0049 only when DAILYSCHEDULER_TOKEN is set (needs a build).
+on:
+  workflow_dispatch:
+  push:
+    branches: ["lint/**"]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: windows-latest
+    env:
+      HAS_TOKEN: ${{ secrets.DAILYSCHEDULER_TOKEN != '' }}
+    defaults:
+      run:
+        working-directory: LineProductionWPF
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: LineProductionWPF
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+        with:
+          repository: vannilaa/DailyScheduler
+          token: ${{ secrets.DAILYSCHEDULER_TOKEN }}
+          path: DailyScheduler
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Whitespace
+        run: dotnet format whitespace --folder . -v diag
+      - name: Safe style fixes
+        if: env.HAS_TOKEN == 'true'
+        run: |
+          dotnet restore LineProductionWPF.slnx
+          dotnet format style LineProductionWPF.slnx --no-restore --diagnostics IDE0005 IDE0044 IDE0049 --severity info -v diag
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && echo "Nothing to fix" && exit 0
+          git commit -m "Apply lint fixes (dotnet format)"
+          git push
