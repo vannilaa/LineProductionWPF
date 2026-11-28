@@ -1,0 +1,24 @@
+name: Lint
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore LineProductionWPF.slnx
+      - name: Whitespace and formatting
+        run: dotnet format whitespace LineProductionWPF.slnx --verify-no-changes --verbosity diagnostic
+      - name: Code style
+        run: dotnet format style LineProductionWPF.slnx --verify-no-changes --severity warn --no-restore --verbosity diagnostic
+      - name: Analyzers
+        run: dotnet format analyzers LineProductionWPF.slnx --verify-no-changes --severity warn --no-restore --verbosity diagnostic
