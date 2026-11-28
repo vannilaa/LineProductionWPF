@@ -1,5 +1,8 @@
 name: Lint
 
+# LineProductionWPF references ../DailyScheduler/ProductionTime.Shared, so both repos are
+# checked out side by side. DailyScheduler is private: add a repo secret DAILYSCHEDULER_TOKEN
+# (fine-grained PAT, Contents: read on vannilaa/DailyScheduler). Without it only whitespace is checked.
 on:
   push:
     branches: [master]
@@ -9,16 +12,32 @@ on:
 jobs:
   lint:
     runs-on: windows-latest
+    env:
+      HAS_TOKEN: ${{ secrets.DAILYSCHEDULER_TOKEN != '' }}
+    defaults:
+      run:
+        working-directory: LineProductionWPF
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: LineProductionWPF
+      - uses: actions/checkout@v4
+        if: env.HAS_TOKEN == 'true'
+        with:
+          repository: vannilaa/DailyScheduler
+          token: ${{ secrets.DAILYSCHEDULER_TOKEN }}
+          path: DailyScheduler
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - name: Restore
-        run: dotnet restore LineProductionWPF.slnx
       - name: Whitespace and formatting
-        run: dotnet format whitespace LineProductionWPF.slnx --verify-no-changes --verbosity diagnostic
+        run: dotnet format whitespace --folder . --verify-no-changes -v diag
+      - name: Restore
+        if: env.HAS_TOKEN == 'true'
+        run: dotnet restore LineProductionWPF.slnx
       - name: Code style
-        run: dotnet format style LineProductionWPF.slnx --verify-no-changes --severity warn --no-restore --verbosity diagnostic
+        if: env.HAS_TOKEN == 'true'
+        run: dotnet format style LineProductionWPF.slnx --verify-no-changes --severity warn --no-restore -v diag
       - name: Analyzers
-        run: dotnet format analyzers LineProductionWPF.slnx --verify-no-changes --severity warn --no-restore --verbosity diagnostic
+        if: env.HAS_TOKEN == 'true'
+        run: dotnet format analyzers LineProductionWPF.slnx --verify-no-changes --severity warn --no-restore -v diag
